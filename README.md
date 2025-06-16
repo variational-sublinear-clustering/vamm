@@ -23,7 +23,7 @@ Please note that the code has only been tested on Linux distributions.
     Clone this repository with the `--recursive` flag to include the required submodules:
 
     ```bash
-    git clone --recursive git@gitlab.uni-oldenburg.de:ml-oldb/expectation-maximization-for-mixture-models/variational-em.git vamm
+    git clone --recursive git@github.com:salwig/vamm.git
     cd vamm/
     ```
 
