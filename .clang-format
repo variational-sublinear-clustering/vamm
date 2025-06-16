@@ -1,0 +1,12 @@
+# .clang-format file
+
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 111
+AllowAllConstructorInitializersOnNextLine: true
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+BreakConstructorInitializersBeforeComma: true
+BreakConstructorInitializers: AfterColon
+# ReflowComments: false
+# IndentPPDirectives: AfterHash
+# KeepPPStatements: true

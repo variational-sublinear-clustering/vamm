@@ -1,0 +1,33 @@
+[submodule "eigen"]
+	path = vamm/extern/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "boost/assert"]
+	path = vamm/extern/boost/assert
+	url = https://github.com/boostorg/assert
+[submodule "boost/config"]
+	path = vamm/extern/boost/config
+	url = https://github.com/boostorg/config
+[submodule "boost/container_hash"]
+	path = vamm/extern/boost/container_hash
+	url = https://github.com/boostorg/container_hash
+[submodule "boost/core"]
+	path = vamm/extern/boost/core
+	url = https://github.com/boostorg/core
+[submodule "boost/describe"]
+	path = vamm/extern/boost/describe
+	url = https://github.com/boostorg/describe
+[submodule "boost/mp11"]
+	path = vamm/extern/boost/mp11
+	url = https://github.com/boostorg/mp11
+[submodule "boost/predef"]
+	path = vamm/extern/boost/predef
+	url = https://github.com/boostorg/predef
+[submodule "boost/static_assert"]
+	path = vamm/extern/boost/static_assert
+	url = https://github.com/boostorg/static_assert
+[submodule "boost/throw_exception"]
+	path = vamm/extern/boost/throw_exception
+	url = https://github.com/boostorg/throw_exception
+[submodule "boost/unordered"]
+	path = vamm/extern/boost/unordered
+	url = https://github.com/boostorg/unordered
