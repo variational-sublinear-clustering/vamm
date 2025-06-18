@@ -1,7 +1,7 @@
 # VAMM
 
 **Variational Accelerated Mixture Models (VAMM)** is a Python/C++ package for truncated variational optimization of mixture models, suitable for high-dimensional, large-scale datasets and large models.
-Refer to the [related publications](#related-publications) for more details. To get started, check out the documentation (**TODO**) and explore the provided [example](#run-the-demo).
+Refer to the [related publications](#related-publications) for more details. To get started, check out the provided [example](#run-the-demo).
 
 ## Installation
 
@@ -81,6 +81,7 @@ S. Salwig*, T. Kahlke*, F. Hirschberger, D. Forster, and J. Lücke.
   author  = {Sebastian Salwig and Till Kahlke and Florian Hirschberger and Dennis Forster and J\"org L\"ucke},
   journal = {arXiv preprint arXiv:2501.12299},
   url     = {https://arxiv.org/abs/2501.12299}, 
-  year    = {2025}
+  year    = {2025},
+  note    = {Sebastian Salwig and Till Kahlke share first authorship on this work.}
 }
 ```
