@@ -68,4 +68,19 @@ The demo fits various mixture models to a [dataset of digits](https://scikit-lea
 
 ## Related Publications
 
-TODO
+If you use this work, please cite the following paper:
+
+S. Salwig*, T. Kahlke*, F. Hirschberger, D. Forster, and J. Lücke.
+"Sublinear Variational Optimization of Gaussian Mixture Models with Millions to Billions of Parameters".
+*[arXiv:2501.12299](https://arxiv.org/abs/2501.12299)* (2025).
+*joint first authorship.
+
+```bibtex
+@article{SalwigKahlkeEtAl2025,
+  title   = {Sublinear Variational Optimization of Gaussian Mixture Models with Millions to Billions of Parameters},
+  author  = {Sebastian Salwig and Till Kahlke and Florian Hirschberger and Dennis Forster and J\"org L\"ucke},
+  journal = {arXiv preprint arXiv:2501.12299},
+  url     = {https://arxiv.org/abs/2501.12299}, 
+  year    = {2025}
+}
+```
