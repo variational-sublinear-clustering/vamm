@@ -215,21 +215,20 @@ def data_variance(
 
     if covariance_type in ("isotropic",):
         var = np.array([np.var(X)])
-        return var if shared else np.tile(var, (C,)) 
-    
-    if covariance_type in ("diagonal","mfa"):
+        return var if shared else np.tile(var, (C,))
+
+    if covariance_type in ("diagonal", "mfa"):
         var = stats.var(X, axis=0)
-        return var if shared else np.tile(var, (C,1)) 
-    
+        return var if shared else np.tile(var, (C, 1))
+
     if covariance_type in ("full",):
         var = np.cov(X.T)
-        return var if shared else np.tile(var, (C, 1, 1)) 
+        return var if shared else np.tile(var, (C, 1, 1))
 
     # if means is not None:
     #     assert len(shp) == 2
     #     assert len(indices) == N
     #     param = np.array([stats.var(X[indices == c], axis=0) for c in range(C)])
-
 
 
 def random_variance(
@@ -271,10 +270,10 @@ def random_variance(
     rng = np.random.default_rng(rng)
     N, D = X.shape
     variance_shape = {
-        "isotropic": {"shared":(1,),"not_shared":(C,)},
-        "diagonal":{"shared":(D,),"not_shared":(C,D)},
-        "mfa":{"shared":(D,),"not_shared":(C,D)},
-        "full": {"shared":(D,D),"not_shared":(C, D, D)},
+        "isotropic": {"shared": (1,), "not_shared": (C,)},
+        "diagonal": {"shared": (D,), "not_shared": (C, D)},
+        "mfa": {"shared": (D,), "not_shared": (C, D)},
+        "full": {"shared": (D, D), "not_shared": (C, D, D)},
     }
     assert covariance_type in variance_shape.keys()
     _shared = "shared" if shared else "not_shared"
@@ -286,8 +285,10 @@ def random_variance(
     var = rng.normal(size=(shp))
 
     if covariance_type in ("full",):
-        var = var @ var.transpose() if shared else np.array(
-            [var[c] @ var[c].transpose() for c in range(C)]
+        var = (
+            var @ var.transpose()
+            if shared
+            else np.array([var[c] @ var[c].transpose() for c in range(C)])
         )  # TODO: improve this
     else:
         np.square(var, out=var)

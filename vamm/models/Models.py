@@ -139,7 +139,7 @@ class Models:
         G: int = 15,
         E: int = 1,
         hard: bool = False,
-        g_approx: str = "",
+        sim_measure: str = "KL",
         indices: npt.NDArray | None = None,
         use_pretrainer: bool = False,
         verbose: bool = False,
@@ -169,6 +169,9 @@ class Models:
             Number of randomly added components. Defaults to 1.
         hard : bool, optional
             Whether to use hard assignment in the M-step. Defaults to False.
+        sim_measure : {"KL","Euclidean"}, optional
+            Whether to use 'KL' (Kullback-Leibler divergence) or 'Euclidean' distance as the similarity measure 
+            for updating the neighborhood set. Defaults to 'KL'.
         indices : np.ndarray or None, optional
             Indices of data points uses as initial component centers. Used for initializing the K-Sets and sets g_c. Defaults to None.
         use_pretrainer : bool, optional
@@ -198,7 +201,7 @@ class Models:
             G=G,
             E=E,
             hard=hard,
-            g_approx=g_approx,
+            sim_measure=sim_measure,
             indices=indices,
             verbose=verbose,
         ):
@@ -264,7 +267,7 @@ class Models:
         G: int = 15,
         E: int = 1,
         hard: bool = False,
-        g_approx: str = "",
+        sim_measure: str = "KL",
         indices: npt.NDArray = None,
         verbose: bool = False,
     ) -> GeneratorExit:
@@ -295,6 +298,8 @@ class Models:
             Number of randomly added components. Defaults to 1.
         hard : bool, optional
             Whether to use hard assignment in the M-step. Defaults to False.
+        sim_measure : {"KL","Euclidean"}, optional
+            Whether to use 'KL' (Kullback-Leibler divergence) or 'Euclidean' distance as the similarity measure for updating the neighborhood set. Defaults to 'KL'.
         indices : np.ndarray, optional
             Indices of data points uses as seeds. Used for initializing the K-sets and sets g_c. Defaults to None.
         use_pretrainer : bool, optional
@@ -314,6 +319,11 @@ class Models:
         X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
         N = X.shape[0]
 
+        assert sim_measure in (
+            "Euclidean",
+            "KL",
+        ), f"Similarity measure must be either 'Euclidean' or 'KL', but got: '{sim_measure}'."
+
         indices = self.initialize(X=X, indices=indices, rng=rng, verbose=verbose)
         self._precompute(X)
 
@@ -331,7 +341,7 @@ class Models:
                 seed=seed,
                 indices=indices,
                 hard=hard,
-                g_approx=g_approx,
+                sim_measure=sim_measure,
             )
         # yield self
         for f, M_step in enumerate([False, True]):

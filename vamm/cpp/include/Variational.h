@@ -101,7 +101,7 @@ class Variational : public SpVarEM<Variational> {
 precision_t compute_KL_divergence(const precision_t& log_prob1, const precision_t& log_prob2) {
     return log_prob1 - log_prob2;
 }
-precision_t compute_distance(const precision_t&, const precision_t& log_prob) { return -log_prob; }
+precision_t compute_euclidean(const precision_t&, const precision_t& log_prob) { return -log_prob; }
 
 void norm(std::vector<Triplet>& candidates, cRef<Vector<>>, const size_t) {
     for (auto& it : candidates) {
@@ -117,7 +117,7 @@ void remove_prior_norm(std::vector<Triplet>& candidates, cRef<Vector<>> P_log, c
 }
 
 Variational::Variational(size_t _N, size_t _C, size_t _C_prime, size_t _G, size_t _E, size_t _seed,
-                         bool _hard = false, std::string _g_approx = "") :
+                         bool _hard = false, std::string _sim_measure = "") :
     SpVarEM(_N, _C, _hard),
     N(_N),
     C(_C),
@@ -130,7 +130,7 @@ Variational::Variational(size_t _N, size_t _C, size_t _C_prime, size_t _G, size_
     rng(_seed),
     initial_seed(_seed) {
     E.fill(_E);
-    init_shared_(_g_approx);
+    init_shared_(_sim_measure);
     if (C_prime != C) {
 #pragma omp parallel
         {
@@ -154,7 +154,7 @@ Variational::Variational(size_t _N, size_t _C, size_t _C_prime, size_t _G, size_
 }
 
 Variational::Variational(size_t _N, size_t _C, size_t _C_prime, size_t _G, size_t _E, size_t _seed,
-                         cRef<Vector<size_t>> indices, bool _hard = false, std::string _g_approx = "") :
+                         cRef<Vector<size_t>> indices, bool _hard = false, std::string _sim_measure = "") :
     SpVarEM(_N, _C, _hard),
     N(_N),
     C(_C),
@@ -168,7 +168,7 @@ Variational::Variational(size_t _N, size_t _C, size_t _C_prime, size_t _G, size_
     initial_seed(_seed) {
     size_t indices_size = indices.size();
     E.fill(_E);
-    init_shared_(_g_approx);
+    init_shared_(_sim_measure);
     if ((indices_size != N) and (indices_size != C)) {
         throw std::invalid_argument("indices must be of size N or C");
     }
@@ -207,7 +207,7 @@ Variational::Variational(size_t _N, size_t _C, size_t _C_prime, size_t _G, size_
     }
 }
 
-void Variational::init_shared_(const std::string& _g_approx = "") {
+void Variational::init_shared_(const std::string& _sim_measure = "") {
     if (N <= 0) {
         throw std::invalid_argument("N must be > 0");
     }
@@ -221,8 +221,8 @@ void Variational::init_shared_(const std::string& _g_approx = "") {
         throw std::invalid_argument("1 <= G <= C must hold");
     }
 
-    if (_g_approx == "distance") {
-        compute_relevance = compute_distance;
+    if (_sim_measure == "Euclidean") {
+        compute_relevance = compute_euclidean;
         finalize_sum_ljs = norm;
     } else {
         compute_relevance = compute_KL_divergence;
@@ -542,23 +542,26 @@ void Variational::bind(py::module_& m) {
         neighborhood. Defaults to None.
     hard : bool, optional
         Whether to use hard assignment in the M-step. Defaults to False.
+    sim_measure : {"KL","Euclidean"}, optional
+            Whether to use 'KL' (Kullback-Leibler divergence) or 'Euclidean' distance as the similarity measure 
+            for updating the neighborhood set. Defaults to 'KL'.
     )");
 
     /* Bindings specific to Variational */
 
     Variational_class_.def(py::init<size_t, size_t, size_t, size_t, size_t, size_t, bool, std::string>(),
                            "N"_a, "C"_a, "C_prime"_a, "G"_a, "E"_a, "seed"_a, "hard"_a = false,
-                           "g_approx"_a = "");
+                           "sim_measure"_a = "");
     Variational_class_.def(
         py::init<size_t, size_t, size_t, size_t, size_t, size_t, cRef<Vector<size_t>>, bool, std::string>(),
-        "N"_a, "C"_a, "C_prime"_a, "G"_a, "E"_a, "seed"_a, "indices"_a, "hard"_a = false, "g_approx"_a = "");
+        "N"_a, "C"_a, "C_prime"_a, "G"_a, "E"_a, "seed"_a, "indices"_a, "hard"_a = false, "sim_measure"_a = "");
     // constructor with indices=None in python:
     Variational_class_.def(
         py::init([](size_t N, size_t C, size_t C_prime, size_t G, size_t E, size_t seed, py::none, bool hard,
-                    std::string g_approx) {
-            return std::unique_ptr<Variational>(new Variational(N, C, C_prime, G, E, seed, hard, g_approx));
+                    std::string sim_measure) {
+            return std::unique_ptr<Variational>(new Variational(N, C, C_prime, G, E, seed, hard, sim_measure));
         }),
-        "N"_a, "C"_a, "C_prime"_a, "G"_a, "E"_a, "seed"_a, "indices"_a, "hard"_a = false, "g_approx"_a = "");
+        "N"_a, "C"_a, "C_prime"_a, "G"_a, "E"_a, "seed"_a, "indices"_a, "hard"_a = false, "sim_measure"_a = "");
     Variational_class_.def_property_readonly("N", &Variational::get_N, "The number of data points.");
     Variational_class_.def_property_readonly("C", &Variational::get_C, "The number of components.");
     Variational_class_.def_property_readonly("C_prime", &Variational::get_C_prime,
