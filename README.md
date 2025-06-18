@@ -23,7 +23,7 @@ Please note that the code has only been tested on Linux distributions.
     Clone this repository with the `--recursive` flag to include the required submodules:
 
     ```bash
-    git clone --recursive git@github.com:salwig/vamm.git
+    git clone --recursive git@github.com:variational-sublinear-clustering/vamm.git
     cd vamm/
     ```
 
