@@ -1,4 +1,5 @@
-/* Copyright (C) 2024 Machine Learning Lab of the University of Oldenburg. */
+/* Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg  */
+/* and Artificial Intelligence Lab of the University of Innsbruck.         */
 /* Licensed under the Academic Free License version 3.0                    */
 
 // helper functions for OpenMP
