@@ -45,7 +45,7 @@ class Mixture {
     virtual void auxiliary_(const size_t) {}
 
     virtual void auxiliary() {
-        #pragma omp parallel for
+#pragma omp parallel for
         for (size_t c = 0; c < C; c++) {
             if (Mask[c]) {
                 auxiliary_(c);
@@ -220,6 +220,10 @@ void Mixture<Model>::P_adjust() {
 #pragma omp parallel for
         for (size_t c = 0; c < C; c++) {
             if (Mask[c]) {
+                if (P[c] <= 0) {
+                    discard(c, "prior not positive");
+                    continue;
+                }
                 P_log[c] = std::log(P[c]);
                 if (!std::isfinite(P_log[c])) {
                     throw std::runtime_error("log of prior is not finite!");
