@@ -29,7 +29,8 @@ class Diagonal : public Mixture<Diagonal> {
 
     void auxiliary_(const size_t c);
 
-    Diagonal(size_t C_, size_t D_, bool flat_prior_, const std::string& var_type_, bool shared_, precision_t reg_covar_);
+    Diagonal(size_t C_, size_t D_, bool flat_prior_, const std::string& var_type_, bool shared_,
+             precision_t reg_covar_);
 
     size_t get_C(void) const;
 
@@ -48,7 +49,11 @@ class Diagonal : public Mixture<Diagonal> {
 
     void E_step_log_joint(cRef<Vector<>> x, const size_t c, precision_t& log_prob) const;
 
-    void M_step_update(cRef<Matrix<>> X, const std::vector<std::vector<q_t>>& partition);
+    template <class Lmbd>
+    void M_step_allocate(const Lmbd& lmbd) const;
+
+    template <class Lmbd>
+    void M_step_update(size_t c, Lmbd&& data_loop, Vector<>& T_sq);
 
     void M_step_finalize(size_t N);
 
@@ -61,8 +66,8 @@ class Diagonal : public Mixture<Diagonal> {
 
 //--------------------------------------------------------------------------------------------------------------------//
 
-Diagonal::Diagonal(size_t C_, size_t D_, bool flat_prior_ = false, const std::string& var_type_ = "diagonal", bool shared_ = false,
-                   precision_t reg_covar_ = 1e-3) :
+Diagonal::Diagonal(size_t C_, size_t D_, bool flat_prior_ = false, const std::string& var_type_ = "diagonal",
+                   bool shared_ = false, precision_t reg_covar_ = 1e-3) :
     Mixture(C_, D_, flat_prior_),
     C(C_),
     D(D_),
@@ -77,9 +82,8 @@ Diagonal::Diagonal(size_t C_, size_t D_, bool flat_prior_ = false, const std::st
     iso = (var_type_ == "isotropic");
     sv = shared_;
     if (!iso and var_type_ != "diagonal") {
-        throw std::invalid_argument(
-            "'covariance_type' should be one of 'isotropic' or 'diagonal', but got '" +
-            var_type_ + "'");
+        throw std::invalid_argument("'covariance_type' should be one of 'isotropic' or 'diagonal', but got '" +
+                                    var_type_ + "'");
     }
 
     M.fill(0);
@@ -130,60 +134,59 @@ void Diagonal::E_step_log_joint(cRef<Vector<>> x, const size_t c, precision_t& l
     log_prob += P_log[c];
 }
 
-void Diagonal::M_step_update(cRef<Matrix<>> X, const std::vector<std::vector<q_t>>& partition) {
-/* */
-#pragma omp parallel
-    {
-        Vector<> T_sq(D);
-#pragma omp for schedule(dynamic, 1)
-        for (size_t c = 0; c < C; c++) {
-            if (Mask[c]) {
-                T_sq.fill(0);
-                M.row(c).fill(0);
-                P[c] = 0.;
-                for (const auto& partition_ : partition) {
-                    for (const auto& [n, q_nc] : partition_[c]) {
-                        T_sq += q_nc * X.row(n).array().square().matrix();
-                        M.row(c) += q_nc * X.row(n);
-                        P[c] += q_nc;
-                    }
-                }
-                if (P[c] <= 0) {
-                    discard(c, "prior not positive");
-                    continue;
-                }
-                M.row(c) /= P[c];
-                if (!checkFinite(M.row(c))) {
-                    discard(c, "mean not finite");
-                    continue;
-                }
+template <class Lmbd>
+void Diagonal::M_step_allocate(const Lmbd& lmbd) const {
+    Vector<> T_sq(D);
 
-                if (iso and sv) {
+    lmbd(T_sq);
+}
+
+template <class Lmbd>
+void Diagonal::M_step_update(size_t c, Lmbd&& data_loop, Vector<>& T_sq) {
+    /* */
+    T_sq.fill(0);
+    M.row(c).fill(0);
+    P[c] = 0.0;
+
+    data_loop([&](cRef<Vector<>> x, precision_t q_nc) {
+        T_sq += q_nc * x.array().square().matrix();
+        M.row(c) += q_nc * x;
+        P[c] += q_nc;
+    });
+
+    if (P[c] <= 0) {
+        discard(c, "prior not positive");
+        return;
+    }
+    M.row(c) /= P[c];
+    if (!checkFinite(M.row(c))) {
+        discard(c, "mean not finite");
+        return;
+    }
+
+    if (iso and sv) {
 #pragma omp atomic
-                    S_iso += T_sq.sum() - M.row(c).array().square().sum() * P[c];
-                }
-                if (iso and !sv) {
-                    S(c,0) = T_sq.sum() / P[c] - M.row(c).array().square().sum();
-                    S(c,0) /= D;
-                    S(c,0) = std::max(S(c,0), reg_covar);
-                    if (!std::isfinite(S(c,0))) {
-                        discard(c, "variance not finite");
-                        continue;
-                    }
-                    S.row(c).fill(S(c,0));
-                }
-                if (!iso and sv) {
-                    S.row(c) = T_sq - M.row(c).array().square().matrix() * P[c];
-                }
-                if (!iso and !sv) {
-                    S.row(c) = T_sq / P[c] - M.row(c).array().square().matrix();
-                    S.row(c) = S.row(c).array().max(reg_covar);
-                    if (!checkFinite(S.row(c))) {
-                        discard(c, "variance not finite");
-                        continue;
-                    }
-                }
-            }
+        S_iso += T_sq.sum() - M.row(c).array().square().sum() * P[c];
+    }
+    if (iso and !sv) {
+        S(c, 0) = T_sq.sum() / P[c] - M.row(c).array().square().sum();
+        S(c, 0) /= D;
+        S(c, 0) = std::max(S(c, 0), reg_covar);
+        if (!std::isfinite(S(c, 0))) {
+            discard(c, "variance not finite");
+            return;
+        }
+        S.row(c).fill(S(c, 0));
+    }
+    if (!iso and sv) {
+        S.row(c) = T_sq - M.row(c).array().square().matrix() * P[c];
+    }
+    if (!iso and !sv) {
+        S.row(c) = T_sq / P[c] - M.row(c).array().square().matrix();
+        S.row(c) = S.row(c).array().max(reg_covar);
+        if (!checkFinite(S.row(c))) {
+            discard(c, "variance not finite");
+            return;
         }
     }
 }
@@ -194,7 +197,7 @@ void Diagonal::M_step_finalize(size_t N) {
         if (iso) {
             S_iso /= N * D;
             S_iso = std::max(S_iso, reg_covar);
-            #pragma omp parallel for
+#pragma omp parallel for
             for (size_t c = 0; c < C; c++) {
                 if (Mask[c]) {
                     S.row(c).fill(S_iso);
@@ -211,7 +214,7 @@ void Diagonal::M_step_finalize(size_t N) {
             }
             S_shared /= N;
             S_shared.array() = S_shared.array().max(reg_covar);
-    #pragma omp parallel for
+#pragma omp parallel for
             for (size_t c = 0; c < C; c++) {
                 if (Mask[c]) {
                     S.row(c) = S_shared;
@@ -239,8 +242,8 @@ void Diagonal::bind(pybind11::module_& m) {
         Regularization strength for the covariance matrix. Defaults to 1e-3.
     )");
 
-    Diagonal_class_.def(pybind11::init<size_t, size_t, bool, const std::string, bool, precision_t>(), "C"_a, "D"_a,
-                        "flat_prior"_a, "var_type"_a, "shared"_a, "reg_covar"_a = 1e-3);
+    Diagonal_class_.def(pybind11::init<size_t, size_t, bool, const std::string, bool, precision_t>(), "C"_a,
+                        "D"_a, "flat_prior"_a, "var_type"_a, "shared"_a, "reg_covar"_a = 1e-3);
 
     Diagonal_class_.def_property_readonly("C", &Diagonal::get_C, "The number of components.");
     Diagonal_class_.def_property_readonly("D", &Diagonal::get_D, "The dimensionality of the data");

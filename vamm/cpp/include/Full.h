@@ -65,7 +65,11 @@ class Full : public Mixture<Full> {
 
     void E_step_log_joint(cRef<Vector<>> x, const size_t c, precision_t& log_prob, Vector<>& T0) const;
 
-    void M_step_update(cRef<Matrix<>> X, const std::vector<std::vector<q_t>>& partition);
+    template <class Lmbd>
+    void M_step_allocate(const Lmbd& lmbd) const;
+
+    template <class Lmbd>
+    void M_step_update(size_t c, Lmbd&& data_loop);
 
     void M_step_finalize(size_t N);
 
@@ -97,7 +101,9 @@ Full::Full(size_t C_, size_t D_, bool flat_prior_ = false, bool shared_ = false,
     shared(shared_) {
     P_adjust();
 #pragma omp parallel
-    { Cholesky[get_thread_num()] = Eigen::LLT<Matrix<>, Eigen::Upper>(D); }
+    {
+        Cholesky[get_thread_num()] = Eigen::LLT<Matrix<>, Eigen::Upper>(D);
+    }
 }
 
 size_t Full::get_C(void) const { return C; }
@@ -132,7 +138,7 @@ void Full::auxiliary() {
         det_log[first_active_c] = -2.0 * Prec_chol[first_active_c].diagonal().array().log().sum();
     }
 
-    #pragma omp parallel for
+#pragma omp parallel for
     for (size_t c = 0; c < C; c++) {
         if (Mask[c]) {
             auxiliary_(c);
@@ -144,8 +150,7 @@ void Full::auxiliary_(const size_t c) {
     if (shared) {
         Prec_chol[c] = Prec_chol[first_active_c];
         det_log[c] = det_log[first_active_c];
-    }
-    else {
+    } else {
         const size_t thread_num = get_thread_num();
 
         // Cholesky decomposition such that U^T U = Covar
@@ -155,7 +160,8 @@ void Full::auxiliary_(const size_t c) {
             return;
         }
         Prec_chol[c] = Cholesky[thread_num].matrixU().solve(Eye);
-        det_log[c] = -2.0 * Prec_chol[c].diagonal().array().log().sum();  // log(det(Cov)) = -2 log(det(Prec_chol))
+        det_log[c] =
+            -2.0 * Prec_chol[c].diagonal().array().log().sum();  // log(det(Cov)) = -2 log(det(Prec_chol))
         // sum of logs is numerically much more stable than log of product.
 
         // Prec[c] = Cholesky[thread_num].solve(Eye);  // using Cholesky decomposition for inverse
@@ -179,40 +185,35 @@ void Full::E_step_log_joint(cRef<Vector<>> x, const size_t c, precision_t& log_p
     log_prob += P_log[c];
 }
 
-void Full::M_step_update(cRef<Matrix<>> X, const std::vector<std::vector<q_t>>& partition) {
-#pragma omp parallel
-    {
-#pragma omp for schedule(dynamic, 1)
-        for (size_t c = 0; c < C; c++) {
-            if (Mask[c]) {
-                P[c] = 0.;
-                M.row(c).fill(0);
-                Covar.row(c).fill(0.);
-                for (const auto& partition_ : partition) {
-                    for (const auto& [n, q_nc] : partition_[c]) {
-                        M.row(c) += q_nc * X.row(n);
-                        Covar.row(c).reshaped<Eigen::RowMajor>(D, D).noalias() +=
-                            q_nc * X.row(n).transpose() * X.row(n);
-                        P[c] += q_nc;
-                    }
-                }
-                if (P[c] <= 0) {
-                    discard(c, "prior not positive");
-                    continue;
-                }
-                M.row(c) /= P[c];
+template <class Lmbd>
+void Full::M_step_allocate(const Lmbd& lmbd) const {
+    lmbd();
+}
 
-                if (shared) {
-                    Covar.row(c).reshaped<Eigen::RowMajor>(D, D).noalias() -=
-                            P[c] * M.row(c).transpose() * M.row(c);
-                }
-                else {
-                    Covar.row(c) /= P[c];
-                    Covar.row(c).reshaped<Eigen::RowMajor>(D, D).noalias() -= M.row(c).transpose() * M.row(c);
-                    Covar.row(c).reshaped<Eigen::RowMajor>(D, D).diagonal().array() += reg_covar;
-                }
-            }
-        }
+template <class Lmbd>
+void Full::M_step_update(size_t c, Lmbd&& data_loop) {
+    P[c] = 0.;
+    M.row(c).fill(0);
+    Covar.row(c).fill(0.);
+
+    data_loop([&](cRef<Vector<>> x, precision_t q_nc) {
+        M.row(c) += q_nc * x;
+        Covar.row(c).reshaped<Eigen::RowMajor>(D, D).noalias() += q_nc * x.transpose() * x;
+        P[c] += q_nc;
+    });
+
+    if (P[c] <= 0) {
+        discard(c, "prior not positive");
+        return;
+    }
+    M.row(c) /= P[c];
+
+    if (shared) {
+        Covar.row(c).reshaped<Eigen::RowMajor>(D, D).noalias() -= P[c] * M.row(c).transpose() * M.row(c);
+    } else {
+        Covar.row(c) /= P[c];
+        Covar.row(c).reshaped<Eigen::RowMajor>(D, D).noalias() -= M.row(c).transpose() * M.row(c);
+        Covar.row(c).reshaped<Eigen::RowMajor>(D, D).diagonal().array() += reg_covar;
     }
 }
 

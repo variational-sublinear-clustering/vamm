@@ -340,7 +340,7 @@ void Mixture<Model>::bind_base(pybind11::class_<Model>& Model_class_) {
     Model_class_.def_property_readonly("log_prior", &Mixture<Model>::get_P_log,
                                        "The natural logarithm of the prior.");
     Model_class_.def_property_readonly(
-        "dtype", [](Model& self) -> py::dtype { return py::dtype::of<precision_t>(); },
+        "dtype", [](Model&) -> py::dtype { return py::dtype::of<precision_t>(); },
         "The numpy dtype of the model parameters.");
     Model_class_.def_readwrite(
         "verbose_discard", &Mixture<Model>::verbose_discard,

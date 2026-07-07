@@ -66,7 +66,12 @@ class MFA : public Mixture<MFA> {
     void E_step_log_joint(cRef<Vector<>> x, const size_t c, precision_t& log_prob, Vector<>& T0,
                           Vector<>& T1) const;
 
-    void M_step_update(cRef<Matrix<>> X, const std::vector<std::vector<q_t>>& partition);
+    template <class Lmbd>
+    void M_step_allocate(const Lmbd& lmbd) const;
+
+    template <class Lmbd>
+    void M_step_update(size_t c, Lmbd&& data_loop, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>& T0,
+                       Vector<>& T1, ColMatrix<>& AM);
 
     void M_step_finalize(size_t N);
     Vector<> z_projection(cRef<Vector<>> x, size_t c) const;
@@ -179,67 +184,64 @@ void MFA::E_step_log_joint(cRef<Vector<>> x, const size_t c, precision_t& log_pr
     log_prob += P_log[c];
 }
 
-void MFA::M_step_update(cRef<Matrix<>> X, const std::vector<std::vector<q_t>>& partition) {
-#pragma omp parallel
-    {
-        ColMatrix<> YE(D, H + 1);
-        ColMatrix<> EE(H + 1, H + 1);
-        Vector<> T0(D);
-        Vector<> T1(H + 1);
-        ColMatrix<> AM(D, H + 1);
-        Vector<> T2(D);
-        size_t data_per_component;
+template <class Lmbd>
+void MFA::M_step_allocate(const Lmbd& lmbd) const {
+    ColMatrix<> YE(D, H + 1);
+    ColMatrix<> EE(H + 1, H + 1);
+    Vector<> T0(D);
+    Vector<> T1(H + 1);
+    ColMatrix<> AM(D, H + 1);
 
-#pragma omp for schedule(dynamic, 1)
-        for (size_t c = 0; c < C; c++) {
-            if (Mask[c]) {
-                EE.fill(0.);
-                YE.fill(0.);
-                P[c] = 0.;
-                S_diag.row(c).fill(0.);
-                data_per_component = 0;
-                for (const auto& partition_ : partition) {
-                    for (const auto& [n, q_nc] : partition_[c]) {
-                        T1[H] = 1.0;
-                        T0 = X.row(n) - M.row(c);
-                        T1.head(H).noalias() = T0 * UV[c].rightCols(H);
+    lmbd(YE, EE, T0, T1, AM);
+}
 
-                        EE.noalias() += q_nc * T1.transpose() * T1;
+template <class Lmbd>
+void MFA::M_step_update(size_t c, Lmbd&& data_loop, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>& T0,
+                        Vector<>& T1, ColMatrix<>& AM) {
+    EE.fill(0.);
+    YE.fill(0.);
+    P[c] = 0.;
+    S_diag.row(c).fill(0.);
+    size_t data_per_component = 0;
 
-                        T1 *= q_nc;
-                        YE.noalias() += X.row(n).transpose() * T1;
-                        S_diag.row(c) += q_nc * X.row(n).array().square().matrix();
-                        P[c] += q_nc;
-                        data_per_component++;
-                    }
-                }
-                if (!shared and (reg_covar == 0.0) and (data_per_component < H + 2)) {
-                    discard(c, "Contains less than H+2 data points!");
-                    continue;
-                }
-                if (P[c] <= 0) {
-                    discard(c, "prior not positive");
-                    continue;
-                }
-                EE.block(0, 0, H, H) += P[c] * LM[c];
+    data_loop([&](cRef<Vector<>> x, precision_t q_nc) {
+        T1[H] = 1.0;
+        T0 = x - M.row(c);
+        T1.head(H).noalias() = T0 * UV[c].rightCols(H);
 
-                EE = EE.inverse();
-                // AM = EE.transpose().bdcSvd(Eigen::ComputeThinU |
-                // Eigen::ComputeThinV).solve(YE.transpose()).transpose();
-                if (!checkFinite(EE)) {
-                    discard(c, "EE matrix inversion failed");
-                    continue;
-                }
-                AM.noalias() = YE * EE;
+        EE.noalias() += q_nc * T1.transpose() * T1;
 
-                S_diag.row(c) -= AM.cwiseProduct(YE).rowwise().sum();  // -= diag(YE @ EE^-1 @ YE^T)
+        T1 *= q_nc;
+        YE.noalias() += x.transpose() * T1;
+        S_diag.row(c) += q_nc * x.array().square().matrix();
+        P[c] += q_nc;
+        data_per_component++;
+    });
 
-                S_diag.row(c) = S_diag.row(c).array().max(0.);
-                M.row(c) = AM.col(H);
-                A.row(c) = AM.block(0, 0, D, H).reshaped<Eigen::RowMajor>();
-            }
-        }
+    if (!shared and (reg_covar == 0.0) and (data_per_component < H + 2)) {
+        discard(c, "Contains less than H+2 data points!");
+        return;
     }
+    if (P[c] <= 0) {
+        discard(c, "prior not positive");
+        return;
+    }
+    EE.block(0, 0, H, H) += P[c] * LM[c];
+
+    EE = EE.inverse();
+    // AM = EE.transpose().bdcSvd(Eigen::ComputeThinU |
+    // Eigen::ComputeThinV).solve(YE.transpose()).transpose();
+    if (!checkFinite(EE)) {
+        discard(c, "EE matrix inversion failed");
+        return;
+    }
+    AM.noalias() = YE * EE;
+
+    S_diag.row(c) -= AM.cwiseProduct(YE).rowwise().sum();  // -= diag(YE @ EE^-1 @ YE^T)
+
+    S_diag.row(c) = S_diag.row(c).array().max(0.);
+    M.row(c) = AM.col(H);
+    A.row(c) = AM.block(0, 0, D, H).reshaped<Eigen::RowMajor>();
 }
 
 void MFA::M_step_finalize(size_t N) {

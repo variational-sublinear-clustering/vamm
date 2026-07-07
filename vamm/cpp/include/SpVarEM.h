@@ -53,20 +53,20 @@ class SpVarEM {
     bool M_step_hard;
 
     template <class Model>
-    size_t E_step_ljs(cRef<Matrix<>> X, const Model &model);
+    size_t E_step_ljs(cRef<Matrix<>> X, const Model& model);
 
-    precision_t E_step_normalize(const precision_t &);
+    precision_t E_step_normalize(const precision_t&);
 
    public:
     SpVarEM(size_t N_, size_t C_, bool hard_);
     // ---
 
     template <class Model>
-    precision_t EM_step(cRef<Matrix<>> X, Model &model, const bool fit, const bool update_var_params,
-                        const precision_t &beta);
+    precision_t EM_step(cRef<Matrix<>> X, Model& model, const bool fit, const bool update_var_params,
+                        const precision_t& beta);
 
     template <class Model>
-    void M_step(cRef<Matrix<>> X, Model &model);
+    void M_step(cRef<Matrix<>> X, Model& model);
 
     // ---
 
@@ -76,7 +76,7 @@ class SpVarEM {
 
     std::unordered_map<size_t, precision_t> q_map(size_t n) const;
 
-    void q_in(size_t n, const std::unordered_map<size_t, precision_t> &map);
+    void q_in(size_t n, const std::unordered_map<size_t, precision_t>& map);
 
     auto approx_map(size_t n) const;
 
@@ -87,16 +87,16 @@ class SpVarEM {
 
 #ifdef CPPLIB_ENABLE_PYTHON_INTERFACE
 
-    static void bind_q_sparse_matrix_interface(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_);
+    static void bind_q_sparse_matrix_interface(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_);
 
     template <typename T, typename... Model>
-    static void bind_EM_step(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_);
+    static void bind_EM_step(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_);
 
     template <typename T, typename... Model>
-    static void bind_E_step(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_);
+    static void bind_E_step(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_);
 
     template <typename T, typename... Model>
-    static void bind_M_step(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_);
+    static void bind_M_step(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_);
 
 #endif
 };
@@ -145,7 +145,7 @@ void SpVarEM<SpVarEMAlgorithm>::get_partition_M(void) {
                       std::vector<std::pair<std::size_t, precision_t>>(0));
 #pragma omp for
             for (size_t n = 0; n < N; n++) {
-                c = std::max_element(qs[n].begin(), qs[n].end(), [](auto &lhs, auto &rhs) -> bool {
+                c = std::max_element(qs[n].begin(), qs[n].end(), [](auto& lhs, auto& rhs) -> bool {
                         return lhs.second < rhs.second;
                     })->first;
                 partition_M[thread_num][c].emplace_back(n, 1.);
@@ -155,7 +155,7 @@ void SpVarEM<SpVarEMAlgorithm>::get_partition_M(void) {
                       std::vector<std::pair<std::size_t, precision_t>>(0));
 #pragma omp for
             for (size_t n = 0; n < qs.size(); n++) {
-                for (const auto &[c, q_nc] : qs[n]) {
+                for (const auto& [c, q_nc] : qs[n]) {
                     if (q_nc > 0.) {  // ignore if q rounds to zero
                         partition_M[thread_num][c].emplace_back(n, q_nc);
                     }
@@ -170,14 +170,14 @@ void SpVarEM<SpVarEMAlgorithm>::get_partition_M(void) {
 
 template <typename SpVarEMAlgorithm>
 template <class Model>
-size_t SpVarEM<SpVarEMAlgorithm>::E_step_ljs(cRef<Matrix<>> X, const Model &model) {
+size_t SpVarEM<SpVarEMAlgorithm>::E_step_ljs(cRef<Matrix<>> X, const Model& model) {
     if constexpr (Model::loop_order_n) {
 #pragma omp parallel
         {
-            model.E_step_allocate([&](auto &...e_step_args) -> auto {
+            model.E_step_allocate([&](auto&... e_step_args) -> auto {
 #pragma omp for  // schedule(dynamic,1)
                 for (size_t n = 0; n < N; n++) {
-                    for (auto &[c, log_prob] : qs[n]) {
+                    for (auto& [c, log_prob] : qs[n]) {
                         model.E_step_log_joint(X.row(n), c, log_prob, e_step_args...);
                     }
                 }
@@ -187,12 +187,12 @@ size_t SpVarEM<SpVarEMAlgorithm>::E_step_ljs(cRef<Matrix<>> X, const Model &mode
         get_partition_E();
 #pragma omp parallel
         {
-            model.E_step_allocate([&](auto &...e_step_args) -> auto {
+            model.E_step_allocate([&](auto&... e_step_args) -> auto {
 #pragma omp for schedule(dynamic, 1)
                 for (std::size_t c = 0; c < C; c++) {
-                    for (const auto &partition_E_ : partition_E) {
+                    for (const auto& partition_E_ : partition_E) {
                         if (!partition_E_[c].empty()) {
-                            for (auto &IT : partition_E_[c]) {
+                            for (auto& IT : partition_E_[c]) {
                                 model.E_step_log_joint(X.row(IT.first), c, IT.second->second, e_step_args...);
                             }
                         }
@@ -211,7 +211,7 @@ size_t SpVarEM<SpVarEMAlgorithm>::E_step_ljs(cRef<Matrix<>> X, const Model &mode
 }
 
 template <typename SpVarEMAlgorithm>
-precision_t SpVarEM<SpVarEMAlgorithm>::E_step_normalize(const precision_t &beta) {
+precision_t SpVarEM<SpVarEMAlgorithm>::E_step_normalize(const precision_t& beta) {
     precision_t objective = 0;
 #pragma omp parallel
     {
@@ -220,7 +220,7 @@ precision_t SpVarEM<SpVarEMAlgorithm>::E_step_normalize(const precision_t &beta)
         precision_t objective_thread = 0;
 #pragma omp for
         for (std::size_t n = 0; n < N; n++) {
-            lim = std::max_element(qs[n].begin(), qs[n].end(), [](auto &lhs, auto &rhs) -> bool {
+            lim = std::max_element(qs[n].begin(), qs[n].end(), [](auto& lhs, auto& rhs) -> bool {
                       return lhs.second < rhs.second;
                   })->second;
             if (!std::isfinite(lim)) {
@@ -228,11 +228,11 @@ precision_t SpVarEM<SpVarEMAlgorithm>::E_step_normalize(const precision_t &beta)
             }
             lim *= beta;
             sum = 0;
-            for (auto &[c, q_nc] : qs[n]) {
+            for (auto& [c, q_nc] : qs[n]) {
                 q_nc = std::exp(beta * q_nc - lim);
                 sum += q_nc;
             }
-            for (auto &[c, q_nc] : qs[n]) {
+            for (auto& [c, q_nc] : qs[n]) {
                 q_nc /= sum;
             }
             if (M_step_hard) {
@@ -249,20 +249,38 @@ precision_t SpVarEM<SpVarEMAlgorithm>::E_step_normalize(const precision_t &beta)
 
 template <typename SpVarEMAlgorithm>
 template <class Model>
-void SpVarEM<SpVarEMAlgorithm>::M_step(cRef<Matrix<>> X, Model &model) {
+void SpVarEM<SpVarEMAlgorithm>::M_step(cRef<Matrix<>> X, Model& model) {
     get_partition_M();
 
-    model.M_step_update(X, partition_M);
+#pragma omp parallel
+    {
+        model.M_step_allocate([&](auto&... m_step_args) {
+#pragma omp for schedule(dynamic, 1)
+            for (size_t c = 0; c < C; c++) {
+                if (!model.Mask[c]) continue;
+
+                auto loop_partition = [&](auto&& M_step_accumulate) {
+                    for (const auto& partition : partition_M) {
+                        for (const auto& [n, q_nc] : partition[c]) {
+                            M_step_accumulate(X.row(n), q_nc);
+                        }
+                    }
+                };
+
+                model.M_step_update(c, loop_partition, m_step_args...);
+            }
+        });
+    }
     model.M_step_finalize(N);
 }
 
 template <typename SpVarEMAlgorithm>
 template <class Model>
-precision_t SpVarEM<SpVarEMAlgorithm>::EM_step(cRef<Matrix<>> X, Model &model, const bool fit,
-                                               const bool update_var_params, const precision_t &beta) {
-    precision_t objective = static_cast<SpVarEMAlgorithm *>(this)->E_step(X, model, update_var_params, beta);
+precision_t SpVarEM<SpVarEMAlgorithm>::EM_step(cRef<Matrix<>> X, Model& model, const bool fit,
+                                               const bool update_var_params, const precision_t& beta) {
+    precision_t objective = static_cast<SpVarEMAlgorithm*>(this)->E_step(X, model, update_var_params, beta);
     if (fit) {
-        static_cast<SpVarEMAlgorithm *>(this)->M_step(X, model);
+        static_cast<SpVarEMAlgorithm*>(this)->M_step(X, model);
     }
     return objective;
 }
@@ -271,24 +289,24 @@ template <typename SpVarEMAlgorithm>
 std::unordered_map<size_t, precision_t> SpVarEM<SpVarEMAlgorithm>::q_map(size_t n) const {
     checkIndex(n, qs.size());
     std::unordered_map<size_t, precision_t> map;
-    for (const auto &el : qs[n]) {
+    for (const auto& el : qs[n]) {
         map.insert(el);
     }
     return map;
 }
 
 template <typename SpVarEMAlgorithm>
-void SpVarEM<SpVarEMAlgorithm>::q_in(size_t n, const std::unordered_map<size_t, precision_t> &map) {
+void SpVarEM<SpVarEMAlgorithm>::q_in(size_t n, const std::unordered_map<size_t, precision_t>& map) {
     checkIndex(n, N);
     if (map.size() != qs[n].size()) {
         throw std::invalid_argument("Invalid map.size()!\n");
     }
-    for (const auto &it : map) {
+    for (const auto& it : map) {
         checkIndex(it.first, C);
     }
     qs[n].clear();
     qs[n].reserve(map.size());
-    for (const auto &it : map) {
+    for (const auto& it : map) {
         qs[n].push_back(it);
     }
 }
@@ -296,7 +314,7 @@ void SpVarEM<SpVarEMAlgorithm>::q_in(size_t n, const std::unordered_map<size_t, 
 template <typename SpVarEMAlgorithm>
 auto SpVarEM<SpVarEMAlgorithm>::approx_map(size_t n) const {
     auto it = std::max_element(qs[n].begin(), qs[n].end(),
-                               [](auto &lhs, auto &rhs) -> bool { return lhs.second < rhs.second; });
+                               [](auto& lhs, auto& rhs) -> bool { return lhs.second < rhs.second; });
     return std::make_pair(it->first, it->second);
 }
 
@@ -307,7 +325,7 @@ auto SpVarEM<SpVarEMAlgorithm>::q_to_sparse_matrix(void) const {
     SparseMatrix<> sp_mat(N, C);
     coeff.reserve(qs[0].size() * qs.size());
     for (size_t n = 0; n < N; n++) {
-        for (const auto &it : qs[n]) {
+        for (const auto& it : qs[n]) {
             coeff.emplace_back(n, it.first, it.second);
         }
     }
@@ -336,7 +354,7 @@ auto SpVarEM<SpVarEMAlgorithm>::q_shrinked_to_sparse_matrix(cRef<Vector<bool>> M
     SparseMatrix<> sp_mat(N, C_active);
     coeff.reserve(qs[0].size() * qs.size());
     for (size_t n = 0; n < N; n++) {
-        for (const auto &it : qs[n]) {
+        for (const auto& it : qs[n]) {
             coeff.emplace_back(n, idx[it.first], it.second);
         }
     }
@@ -372,7 +390,7 @@ void SpVarEM<SpVarEMAlgorithm>::q_from_sparse_matrix(const SparseMatrix<> sp_mat
 
 template <typename SpVarEMAlgorithm>
 void SpVarEM<SpVarEMAlgorithm>::bind_q_sparse_matrix_interface(
-    py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_) {
+    py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_) {
     SpVarEMAlgorithm_class_.def_property("q", &SpVarEMAlgorithm::q_to_sparse_matrix,
                                          &SpVarEMAlgorithm::q_from_sparse_matrix,
                                          "The variational distributions `q` as a scipy sparse csr matrix. "
@@ -401,10 +419,10 @@ void SpVarEM<SpVarEMAlgorithm>::bind_q_sparse_matrix_interface(
 
 template <typename SpVarEMAlgorithm>
 template <typename T, typename... Model>
-void SpVarEM<SpVarEMAlgorithm>::bind_E_step(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_) {
+void SpVarEM<SpVarEMAlgorithm>::bind_E_step(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_) {
     (SpVarEMAlgorithm_class_.def(
          "E_step",
-         [](SpVarEMAlgorithm &self, cRef<Matrix<>> X, Model &model, bool update_var_params,
+         [](SpVarEMAlgorithm& self, cRef<Matrix<>> X, Model& model, bool update_var_params,
             precision_t beta) -> auto { return self.E_step(X, model, update_var_params, beta); },
          "X"_a.noconvert(), "model"_a, "update_var_params"_a = true, "beta"_a = 1.0, R"(
                 Perform one Expectation step of the variational EM algorithm.
@@ -430,10 +448,10 @@ void SpVarEM<SpVarEMAlgorithm>::bind_E_step(py::class_<SpVarEMAlgorithm> &SpVarE
 
 template <typename SpVarEMAlgorithm>
 template <typename T, typename... Model>
-void SpVarEM<SpVarEMAlgorithm>::bind_M_step(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_) {
+void SpVarEM<SpVarEMAlgorithm>::bind_M_step(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_) {
     (SpVarEMAlgorithm_class_.def(
          "M_step",
-         [](SpVarEMAlgorithm &self, cRef<Matrix<>> X, Model &model) -> auto { return self.M_step(X, model); },
+         [](SpVarEMAlgorithm& self, cRef<Matrix<>> X, Model& model) -> auto { return self.M_step(X, model); },
          "X"_a.noconvert(), "model"_a, R"(
                 Perform one Maximization step of the variational EM algorithm.
 
@@ -453,10 +471,10 @@ void SpVarEM<SpVarEMAlgorithm>::bind_M_step(py::class_<SpVarEMAlgorithm> &SpVarE
 
 template <typename SpVarEMAlgorithm>
 template <typename T, typename... Model>
-void SpVarEM<SpVarEMAlgorithm>::bind_EM_step(py::class_<SpVarEMAlgorithm> &SpVarEMAlgorithm_class_) {
+void SpVarEM<SpVarEMAlgorithm>::bind_EM_step(py::class_<SpVarEMAlgorithm>& SpVarEMAlgorithm_class_) {
     (SpVarEMAlgorithm_class_.def(
          "EM_step",
-         [](SpVarEMAlgorithm &self, cRef<Matrix<>> X, Model &model, bool fit, bool update_var_params,
+         [](SpVarEMAlgorithm& self, cRef<Matrix<>> X, Model& model, bool fit, bool update_var_params,
             precision_t beta) -> auto { return self.EM_step(X, model, fit, update_var_params, beta); },
          "X"_a.noconvert(), "model"_a, "fit"_a = true, "update_var_params"_a = true, "beta"_a = 1.0, R"(
                 Perform one iteration of the variational EM algorithm.
