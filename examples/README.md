@@ -9,7 +9,8 @@ Next, navigate into the `examples/` directory.
 
 ## Quick Demo
 
-For a quick introduction to **VAMM**, run the demo script that fits mixture models to a [dataset of digits](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html) and reports the final training objectives of the models.
+For a quick introduction to **VAMM**, run the demo script.
+The demo fits different types of Gaussian mixture models (including mixtures of factor analyzers) to a [dataset of hand-written digits](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html). Final training objectives for each optimization run are reported.
 
 To run this demo:
 

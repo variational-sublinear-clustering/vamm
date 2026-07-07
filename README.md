@@ -64,7 +64,7 @@ Rebuild the package using `pip install .` for the changes to take effect.
 ## Run the Demo
 
 After [installation](#installation), you will be able to run **VAMM**. Therefore, check out our [examples](./examples/README.md).
-The demo fits various mixture models to a [dataset of digits](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html) and reports the final training objectives.
+The demo fits different types of Gaussian mixture models (including mixtures of factor analyzers) to a [dataset of hand-written digits](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html). Final training objectives for each optimization run are reported.
 
 ## Related Publications
 
