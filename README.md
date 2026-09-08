@@ -72,16 +72,19 @@ If you use this work, please cite the following paper:
 
 S. Salwig*, T. Kahlke*, F. Hirschberger, D. Forster, and J. Lücke.
 "Sublinear Variational Optimization of Gaussian Mixture Models with Millions to Billions of Parameters".
-*[arXiv:2501.12299](https://arxiv.org/abs/2501.12299)* (2025).
+*[Journal of Machine Learning Research, 27(167):1−70](https://jmlr.org/papers/v27/25-0639.html)* (2026).
 *joint first authorship.
 
 ```bibtex
-@article{SalwigKahlkeEtAl2025,
+@article{SalwigKahlkeEtAl2026,
+  author  = {Sebastian Salwig and Till Kahlke and Florian Hirschberger and Dennis Forster and J{{\"o}}rg L{{\"u}}cke},
   title   = {Sublinear Variational Optimization of Gaussian Mixture Models with Millions to Billions of Parameters},
-  author  = {Sebastian Salwig and Till Kahlke and Florian Hirschberger and Dennis Forster and J\"org L\"ucke},
-  journal = {arXiv preprint arXiv:2501.12299},
-  url     = {https://arxiv.org/abs/2501.12299}, 
-  year    = {2025},
+  journal = {Journal of Machine Learning Research},
+  year    = {2026},
+  volume  = {27},
+  number  = {167},
+  pages   = {1--70},
+  url     = {http://jmlr.org/papers/v27/25-0639.html}
   note    = {Sebastian Salwig and Till Kahlke share first authorship on this work.}
 }
 ```
