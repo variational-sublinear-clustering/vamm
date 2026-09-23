@@ -98,7 +98,7 @@ ext_modules = [
 with ParallelCompile(default=0):
     setup(
         name="vamm",
-        version="0.1",
+        version="1.0",
         packages=find_packages(),
         zip_safe=False,
         ext_modules=ext_modules,

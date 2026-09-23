@@ -1,7 +1,9 @@
-# VAMM
+# VAMM - Variational Accelerated Mixture Models
+[![docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://vamm.readthedocs.io/)
+[![License: AFL-3.0](https://img.shields.io/badge/License-AFL--3.0-yellow.svg)](LICENSE)
 
 **Variational Accelerated Mixture Models (VAMM)** is a Python/C++ package for truncated variational optimization of mixture models, suitable for high-dimensional, large-scale datasets and large models.
-Refer to the [related publications](#related-publications) for more details. To get started, check out the documentation (**TODO**) and explore the provided [example](#run-the-demo).
+Refer to the [related publications](#related-publications) for more details. To get started, check out the [documentation](https://vamm.readthedocs.io/) and explore the provided [example](#run-the-demo).
 
 ## Installation
 
@@ -40,7 +42,7 @@ Please note that the code has only been tested on Linux distributions.
     We recommend using [Anaconda](https://www.anaconda.com/) to manage the installation and create a new environment for the project:
 
     ```bash
-    conda create -n vamm python=3.9
+    conda create -n vamm "python>=3.9,<3.15"
     conda activate vamm
     ```
 
