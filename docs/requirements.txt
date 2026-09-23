@@ -1,0 +1,5 @@
+numpydoc
+sphinx
+sphinx-rtd-theme
+sphinx-book-theme
+git+https://github.com/variational-sublinear-clustering/vamm

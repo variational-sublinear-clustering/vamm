@@ -249,7 +249,7 @@ class Variational:
             Whether to print progress messages. Defaults to False.
 
         Yields
-        -------
+        ------
         self
             The object after each iteration.
 
