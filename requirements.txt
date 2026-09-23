@@ -1,4 +1,5 @@
-numpy
-scikit-learn
-h5py
-pandas
+numpy>=1.26,<3
+scipy>=1.11,<2
+scikit-learn>=1.4,<2
+h5py>=3.10,<4
+pandas>=2.1,<3

@@ -1,20 +1,17 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 
 from __future__ import annotations
 
-import time
 from typing import Any
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
 from vamm.utils.sanity import check_X
-from vamm.utils.commons import format_time
 from vamm.utils.init_params import flat, afkmc2, random_data
-
-from vamm.cpp import EM
+from ..em.Variational import Variational
 
 
 class Models:
@@ -40,25 +37,19 @@ class Models:
 
         self.em = None
 
-        self.objective = None
-        self._objective_last = None
-
-        self._log = []
-
-        self._init = {
-            param: init
-            for param, init in zip(
-                ["prior", "means"],
-                [init_prior, init_means],
-            )
-            if type(init) is str
-        }
+        self._init = {"prior": None, "means": None}
 
         if type(init_prior) is np.ndarray and not self.flat_prior:
             self.prior = init_prior
+        elif type(init_prior) is str and not self.flat_prior:
+            self.prior[:] = np.nan
+            self._init["prior"] = init_prior
 
         if type(init_means) is np.ndarray:
             self.means = init_means
+        elif type(init_means) is str and not self.flat_prior:
+            self.means[:] = np.nan
+            self._init["means"] = init_means
 
     def __setattr__(self, name: str, value: Any) -> None:
         """
@@ -100,7 +91,7 @@ class Models:
         """
         return self._cpp.__getattribute__(name)
 
-    def initialize(
+    def _initialize(
         self,
         X: npt.NDArray,
         indices: npt.NDArray | None = None,
@@ -108,15 +99,14 @@ class Models:
         verbose: bool = False,
     ):
         rng = np.random.default_rng(rng)
-        if "prior" in self._init.keys():
+        if np.isnan(self.prior).all() and self._init["prior"] is not None:
             assert self._init["prior"] in (
                 "flat",
             ), "Initialization method for prior unknown."
             if not self.flat_prior:
                 self.prior = flat(self.C, dtype=self.prior.dtype, verbose=verbose)
-            self._init.pop("prior")
 
-        if "means" in self._init.keys():
+        if np.isnan(self.means).all() and self._init["means"] is not None:
             assert self._init["means"] in (
                 "afkmc2",
                 "random",
@@ -126,19 +116,19 @@ class Models:
                 if self._init["means"] == "afkmc2"
                 else random_data(X, self.C, rng=rng, verbose=verbose)
             )
-            self._init.pop("means")
-
         return indices
 
     def fit(
         self,
         X: npt.NDArray,
+        em: Variational = None,
         limit: list[int] | int | None = 1000,
         rng: np.random.generator | int | None = None,
         eps: list[float] | float = 1.0e-4,
         C_prime: int = 3,
         G: int = 15,
         E: int = 1,
+        relocate_discarded: bool = True,
         hard: bool = False,
         sim_measure: str = "KL",
         indices: npt.NDArray | None = None,
@@ -171,7 +161,7 @@ class Models:
         hard : bool, optional
             Whether to use hard assignment in the M-step. Defaults to False.
         sim_measure : {"KL","Euclidean"}, optional
-            Whether to use 'KL' (Kullback-Leibler divergence) or 'Euclidean' distance as the similarity measure 
+            Whether to use 'KL' (Kullback-Leibler divergence) or 'Euclidean' distance as the similarity measure
             for updating the neighborhood set. Defaults to 'KL'.
         indices : np.ndarray or None, optional
             Indices of data points uses as initial component centers. Used for initializing the K-Sets and sets g_c. Defaults to None.
@@ -187,39 +177,55 @@ class Models:
         log : pd.DataFrame
             a DataFrame with training history.
         """
-        eps, limit = self._check_conv_criteria(eps, limit)
+        self.em = em
         if use_pretrainer:
-            eps, limit = self.pretrainer(
-                X, limit, rng, eps, C_prime, G, E, indices, verbose
+            self._pretrainer(
+                X=X,
+                em=em,
+                limit=limit,
+                rng=rng,
+                eps=eps,
+                C_prime=C_prime,
+                G=G,
+                E=E,
+                relocate_discarded=relocate_discarded,
+                indices=indices,
+                verbose=verbose,
             )
+            limit = limit if isinstance(limit, (list, tuple)) else [limit]
+            limit = [0, limit[-1]]  # avoid warmup after pretrainer
 
-        for _ in self._fit(
-            X=X,
-            limit=limit,
-            rng=rng,
-            eps=eps,
-            C_prime=C_prime,
-            G=G,
-            E=E,
-            hard=hard,
-            sim_measure=sim_measure,
-            indices=indices,
-            verbose=verbose,
-        ):
-            pass
+        X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
+        indices = self._initialize(X=X, indices=indices, rng=rng, verbose=verbose)
+        if indices is not None:
+            assert np.unique(indices).shape[0] == self.C, "indices are not unique!"
 
-        return self.objective, self.log
+        if self.em is None:
+            self.em = Variational(
+                N=X.shape[0],
+                C=self.C,
+                C_prime=C_prime,
+                G=G,
+                E=E,
+                rng=rng,
+                indices=indices,
+                relocate_discarded=relocate_discarded,
+                hard=hard,
+                sim_measure=sim_measure,
+            )
+        return self.em.fit(model=self, X=X, limit=limit, eps=eps, verbose=verbose)
 
-    # TODO: make 'private'?
-    def pretrainer(
+    def _pretrainer(
         self,
         X: np.ndarray,
+        em: Variational = None,
         limit: list[int] | int | None = 1000,
         rng: np.random.generator | int | None = None,
         eps: list[float] | float = 1.0e-4,
         C_prime: int = 3,
         G: int = 15,
         E: int = 1,
+        relocate_discarded: bool = True,
         indices: npt.NDArray | None = None,
     ):
         """
@@ -256,225 +262,160 @@ class Models:
         limit: int
             Convergence limit to use after pertaining
         """
-        return eps, limit
+        pass
 
-    def _fit(
-        self,
-        X: npt.NDArray,
-        limit: list | int | None = 1000,
-        rng: np.random.Generator | int | None = None,
-        eps: list | float = 1.0e-4,
-        C_prime: int = 3,
-        G: int = 15,
-        E: int = 1,
-        hard: bool = False,
-        sim_measure: str = "KL",
-        indices: npt.NDArray = None,
-        verbose: bool = False,
-    ) -> GeneratorExit:
+    def discard(self, c: int):
         """
-        This method fits the model to the input data using the EM algorithm and
-        yields the result for each iteration and is internally used by the '.fit()' method.
-        It can also serve as an interface for accessing the fitting process between iterations.
+        Discards the given component.
+
+        The component at the given index will be ignored and the prior is adjusted accordingly.
 
         Parameters
         ----------
-        X : np.ndarray
+        c : int
+            Component index.
+
+        Returns
+        -------
+        None
+        """
+        self._cpp.discard(c)
+
+    def log_joint(self, x: npt.NDArray, c: int):
+        """
+
+        Calculates log-joint value for the given data point and component.
+
+        Parameters
+        ----------
+        x : npt.ndarray
+            Data point.
+        c : int
+            Component index.
+
+        Returns
+        -------
+        logjoint : float
+            Value of the log-joint of x and c.
+        """
+        return self._cpp.log_joint(x, c)
+
+    def map(self, x: npt.NDArray, c: int):
+        """
+        Finds the maximum a posteriori (MAP) component for the given data point.
+
+        This method finds the index of the component with the maximum a posteriori (MAP)
+        probability for the given data point using exhaustive search.
+
+        Parameters
+        ----------
+        x : npt.ndarray
+            Data point.
+
+        Returns
+        -------
+        int
+            The index of the MAP component.
+        """
+        return self._cpp.map(x, c)
+
+    def map_k(self, x: npt.NDArray, k: int):
+        """
+        Finds the indices and log-joints of the k components with the larges log-joints for the given data point.
+
+        This method finds the indices and of the k components with the larges log-joints probabilities for the given
+        data point using exhaustive search. A dictionary is returned where keys are component indices and values are
+        corresponding log-joints.
+
+        Parameters
+        ----------
+        x : npt.ndarray
+            Data point.
+        k : int
+            Number of components to consider.
+
+        Returns
+        -------
+        Dict[int, float]
+            Dictionary with indices and log-joints of the k components with the larges log-joints.
+        """
+        return self._cpp.map_k(x, k)
+
+    def ll(self, X: npt.NDArray):
+        """
+        Calculate the log-likelihood of the model given the input data.
+
+        Parameters
+        ----------
+        X : npt.ndarray
             Input data.
-        limit : int, list[int] or None, optional
-            Convergence limit(s). If a single value is provided, it is applied to both warm-up
-            and EM iterations. If a list of two values is provided, the first value is used for
-            warm-up iterations and the second value for EM iterations. None means no limit. Defaults to 1000.
-        rng : np.random.Generator, int or None, optional
-            Random number generator or seed. For None, a random seed is used.
-        eps : float or list[float]
-            Convergence threshold(s). If a single value is provided, it is applied to both warm-up
-            and EM iterations. If a list of two values is provided, the first value is used for
-            warm-up iterations and the second value for EM iterations. Defaults to 1.0e-4.
-        C_prime : int, optional
-            Number of non-zero elements in truncated posterior. Defaults to 3.
-        G : int, optional
-            Component neighborhood size. Defaults to 15.
-        E : int, optional
-            Number of randomly added components. Defaults to 1.
-        hard : bool, optional
-            Whether to use hard assignment in the M-step. Defaults to False.
-        sim_measure : {"KL","Euclidean"}, optional
-            Whether to use 'KL' (Kullback-Leibler divergence) or 'Euclidean' distance as the similarity measure for updating the neighborhood set. Defaults to 'KL'.
-        indices : np.ndarray, optional
-            Indices of data points uses as seeds. Used for initializing the K-sets and sets g_c. Defaults to None.
-        use_pretrainer : bool, optional
-            Whether to use pretraining. Defaults to False.
-        verbose : bool, optional
-            Whether to print progress messages. Defaults to False.
 
-        Yields
+        Returns
         -------
-        self
-            The object after each iteration.
+        float
+            The log-likelihood of the model.
         """
-
-        eps, limit = self._check_conv_criteria(eps, limit)
-        rng = np.random.default_rng(rng)
-
         X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
-        N = X.shape[0]
+        return self._cpp.ll(X)
 
-        assert sim_measure in (
-            "Euclidean",
-            "KL",
-        ), f"Similarity measure must be either 'Euclidean' or 'KL', but got: '{sim_measure}'."
-
-        indices = self.initialize(X=X, indices=indices, rng=rng, verbose=verbose)
-        self._precompute(X)
-
-        if indices is not None:
-            assert np.unique(indices).shape[0] == self.C, "indices are not unique!"
-        # initialization
-        if self.em is None:
-            seed = rng.integers(low=0, high=np.iinfo(np.uint32).max)
-            self.em = EM(
-                N=X.shape[0],
-                C=self.C,
-                C_prime=C_prime,
-                G=G,
-                E=E,
-                seed=seed,
-                indices=indices,
-                hard=hard,
-                sim_measure=sim_measure,
-            )
-        # yield self
-        for f, M_step in enumerate([False, True]):
-            i = 0
-            l = limit[f]
-            e = eps[f]
-            while l is None or i != l:
-                active = self.active
-
-                tic = time.monotonic()
-                self.objective = self.em.E_step(X=X, model=self._cpp)
-                if M_step:
-                    self.em.M_step(X=X, model=self._cpp)
-                dt = time.monotonic() - tic
-
-                # show progress
-                if verbose:
-                    self._message(i, M_step, dt, active)
-
-                self._log.append(
-                    {
-                        "i": i,
-                        "active": self.active,
-                        "M_step": M_step,
-                        "objective": self.objective,
-                        "eval": self.em.number_ljs,
-                        "time": dt,
-                    }
-                )
-
-                # check for increasing lower bound
-                if i != 0:  # -initial
-                    if (
-                        self.objective > self._objective_last
-                        and not np.isclose(self.objective, self._objective_last)
-                        and verbose
-                    ):
-                        print(
-                            f"Increasing objective (from {self._objective_last:<10.5f} to {self.objective:<10.5f})!",
-                            flush=True,
-                            end="\n\n",
-                        )
-
-                yield self
-                # convergence criterion
-                if i > 0:
-                    if e is not None and self._stop(e):
-                        break
-
-                self._objective_last = self.objective
-                i += 1
-
-        if i == l and e > 0.0:
-            print("Warning: Max. Iterations reached. Model did not converge.")
-        # final objective after the last M-step
-        self.objective = self.em.E_step(X=X, model=self._cpp)
-
-    def _stop(self, e):
+    def nll(self, X: npt.NDArray):
         """
-        Checks if the algorithm should stop based on the relative change of the training objective.
+        Calculate the negative log-likelihood per data point of the model given the input data.
 
         Parameters
         ----------
-        e : float
-            Convergence threshold.
+        X : npt.ndarray
+            Input data.
 
         Returns
         -------
-        bool
-            True if the relative change in the objective is less than the threshold, False otherwise.
+        float
+            The negative log-likelihood of the model.
         """
-        return abs(self.objective / self._objective_last - 1) < e
+        X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
+        return self._cpp.nll(X)
 
-    @property
-    def log(self):
+    def log_prob(self, X: npt.NDArray, indices: npt.NDArray = None):
         """
-        The training history as a pandas DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            The training history.
-        """
-        return pd.DataFrame(self._log)
-
-    def _check_conv_criteria(
-        self, eps: list[float] | float, limit: list[int] | int
-    ) -> tuple[list[float], list[int]]:
-        """
-        Checks variables for the convergence criteria and iteration limits and adjust them.
+        Calculate the log probabilities per data point of the model given the input data.
 
         Parameters
         ----------
-        eps : float or list[float]
-            Convergence threshold(s).
-        limit : int or list[int]
-            Convergence limit(s).
+        X : npt.ndarray
+            Input data.
+
+        X : npt.ndarray
+            Components per data point to consider.
 
         Returns
         -------
-        list[float]
-            The convergence thresholds.
-        list[int]
-            The maximum number of EM iterations.
+        npt.ndarray
+            The probabilities per data point.
         """
-        if not isinstance(eps, (list, tuple)):
-            eps = [eps]
-        if not isinstance(limit, (list, tuple)):
-            limit = [limit]
+        X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
+        if indices is None:
+            assert self.em is not None, "If Indices is None, we need a em trainer."
+            N = X.shape[0]
+            C_prime = self.em.C_prime
+            indices = self.em.q.indices.reshape(N, C_prime)
 
-        assert len(eps) == 1 or len(eps) == 2
-        assert len(limit) == 1 or len(limit) == 2
+        return self._cpp.log_prob(X, indices.astype(np.uint64))
 
-        # if self.em is already initialized, skip warm-up steps by default
-        # but do them if limit or eps have explicitly two values
-        if self.em is not None and len(limit) == 1 and len(eps) == 1:
-            limit = [0, limit[0]]
+    def probability(self, X: npt.NDArray, indices: npt.NDArray = None):
+        """
+        Calculate the probabilities per data point of the model given the input data.
 
-        eps = 2 * eps if len(eps) == 1 else eps
-        limit = 2 * limit if len(limit) == 1 else limit
+        Parameters
+        ----------
+        X : npt.ndarray
+            Input data.
 
-        return eps, limit
+        X : npt.ndarray
+            Components per data point to consider.
 
-    def _message(self, i, M_step, dt, active):
-        msg = f"Iteration {i+1} "
-        msg += "(Warm-Up)\n\t" if not M_step else "\n\t"
-        msg += f"Objective: {self.objective:<10.4f}\t"
-        msg += f"Time: {format_time(dt)}\t"
-        msg += f"Active Components: {self.active}/{self.C}\n"
-        msg += (
-            f"\tDiscarded {active - self.active} component(s)!\n"
-            if active != self.active
-            else ""
-        )
-        print(msg, flush=True)
+        Returns
+        -------
+        npt.ndarray
+            The probabilities per data point.
+        """
+        return np.exp(self.log_prob(X, indices.astype(np.uint64)))

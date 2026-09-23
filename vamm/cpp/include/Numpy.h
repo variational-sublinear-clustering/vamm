@@ -4,16 +4,16 @@
 
 #pragma once
 
-// define the macro CLUSTERING_PRECISION to choose between double and float (default is double)
+// define the macro PRECISION_T to choose between double and float (default is double)
 // use
-//   -DCLUSTERING_PRECISION=double
+//   -DPRECISION_T=double
 // or
-//   -DCLUSTERING_PRECISION=float
-#ifndef CLUSTERING_PRECISION
-#define CLUSTERING_PRECISION double
+//   -DPRECISION_T=float
+#ifndef PRECISION_T
+#define PRECISION_T double
 #endif
 
-typedef CLUSTERING_PRECISION precision_t;
+typedef PRECISION_T precision_t;
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>

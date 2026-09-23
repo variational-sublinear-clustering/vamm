@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 
@@ -19,7 +19,10 @@ def timer(msg: str = "Time taken:", decimal_digits=2):
     Parameters
     ----------
     msg : str, optional
-        Message to be printed together with the elapsed time, by default "Time taken:"
+        Message to be printed together with the elapsed time, by default "Time taken:".
+
+    decimal_digits : int, optional
+        Number of digits uses for rounding.
 
     Examples
     --------
@@ -55,7 +58,7 @@ def format_with_prefix(num: float, unit: str = "", base: float = 1000.0) -> str:
     unit : str, optional
         The unit to be appended to the formatted number. Default is an empty string.
     base : float, optional
-        The base used to determine the prefix. For example, use `base=1024` for binary units like bytes.
+        The base used to determine the prefix. For example, use ``base=1024`` for binary units like bytes.
         Default is 1000.0.
 
     Returns

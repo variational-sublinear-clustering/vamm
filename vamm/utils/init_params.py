@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 
@@ -19,21 +19,21 @@ def flat(
     """
     Initializes a flat prior distribution.
 
-    This function creates a flat (uniform) prior distribution for `C` components, where each component has an equal probability.
+    This function creates a flat (uniform) prior distribution for ``C`` components, where each component has an equal probability.
 
     Parameters
     ----------
     C : int
         The number of components in the distribution.
     dtype : dtype
-        The desired data type for the output array (e.g., `np.float32`, `np.float64`).
+        The desired data type for the output array (e.g., ``np.float32``, ``np.float64``).
     verbose : bool, optional
-        If `True`, prints a message indicating that the prior is being initialized. Default is `False`.
+        If ``True``, prints a message indicating that the prior is being initialized. Default is ``False``.
 
     Returns
     -------
     ndarray
-        An array of shape `(C,)` containing the flat prior distribution, where each entry is equal to `1/C`.
+        An array of shape ``(C,)`` containing the flat prior distribution, where each entry is equal to ``1/C``.
     """
     if verbose:
         print("Initialize Prior with 1/C...", flush=True)
@@ -50,7 +50,7 @@ def afkmc2(
     """
     Initializes component centers (means) using the AFK-MC² algorithm.
 
-    This function selects `C` initial centers from the dataset `X` using the AFK-MC² algorithm, a variant of
+    This function selects ``C`` initial centers from the dataset ``X`` using the AFK-MC² algorithm, a variant of
     the k-means++ initialization, which is designed to provide a more efficient sampling process.
 
     Parameters
@@ -62,16 +62,16 @@ def afkmc2(
     chain : int, optional
         The length of the Markov chain. Default is 10.
     rng : np.random.Generator, int, or None, optional
-        The random number generator or seed used for initialization. If `None`, the default random number generator is used.
+        The random number generator or seed used for initialization. If ``None``, the default random number generator is used.
     verbose : bool, optional
-        If `True`, prints a message indicating that the means is being initialized. Default is `False`.
+        If ``True``, prints a message indicating that the means is being initialized. Default is ``False``.
 
     Returns
     -------
     centers : npt.NDArray
         An array containing the initialized centers.
     indices : npt.NDArray
-        An array containing the indices of the selected centers from the dataset `X`.
+        An array containing the indices of the selected centers from the dataset ``X``.
 
     References
     ----------
@@ -97,7 +97,7 @@ def random_data(
     """
     Initializes component centers (means) by randomly selecting data points from the dataset.
 
-    This function selects `C` random data points from the dataset `X` to be used as the initial centers for componenting.
+    This function selects ``C`` random data points from the dataset ``X`` to be used as the initial centers for componenting.
 
     Parameters
     ----------
@@ -106,16 +106,16 @@ def random_data(
     C : int
         The number of centers (components) to initialize.
     rng : np.random.Generator, int, or None, optional
-        The random number generator or seed used for initialization. If `None`, the default random number generator is used.
+        The random number generator or seed used for initialization. If ``None``, the default random number generator is used.
     verbose : bool, optional
-        If `True`, prints a message indicating that the means are being initialized. Default is `False`.
+        If ``True``, prints a message indicating that the means are being initialized. Default is ``False``.
 
     Returns
     -------
     centers : npt.NDArray
         An array containing the initialized centers.
     indices : npt.NDArray
-        An array containing the indices of the selected centers from the dataset `X`.
+        An array containing the indices of the selected centers from the dataset ``X``.
     """
     rng = np.random.default_rng(rng)
     if verbose:
@@ -136,7 +136,7 @@ def uniform(
     """
     Initializes an 3D array with values drawn from a uniform distribution.
 
-    This function generates a `(C, D, H)` shaped array `A` where each element is sampled uniformly between `low` and `high`.
+    This function generates a ``(C, D, H)`` shaped array ``A`` where each element is sampled uniformly between ``low`` and ``high``.
 
     Parameters
     ----------
@@ -147,18 +147,18 @@ def uniform(
     H : int
         The size of the third dimension of the output array.
     low : float, optional
-        The lower bound of the uniform distribution. Default is `0.0`.
+        The lower bound of the uniform distribution. Default is ``0.0``.
     high : float, optional
-        The upper bound of the uniform distribution. Default is `1.0`.
+        The upper bound of the uniform distribution. Default is ``1.0``.
     rng : np.random.Generator, int, or None, optional
-        The random number generator or seed used to generate the uniform distribution. If `None`, the default random number generator is used.
+        The random number generator or seed used to generate the uniform distribution. If ``None``, the default random number generator is used.
     verbose : bool, optional
-        If `True`, prints a message indicating that `A` is being initialized. Default is `False`.
+        If ``True``, prints a message indicating that ``A`` is being initialized. Default is ``False``.
 
     Returns
     -------
     ndarray
-        An array of shape `(C, D, H)` filled with uniformly distributed random values.
+        An array of shape ``(C, D, H)`` filled with uniformly distributed random values.
     """
     rng = np.random.default_rng(rng)
     if verbose:
@@ -171,16 +171,12 @@ def data_variance(
     C: int,
     covariance_type: str,
     shared: bool,
-    means: npt.NDArray | None = None,
-    indices: npt.NDArray | None = None,
     verbose: bool = False,
 ):
     """
     Initializes variance parameters based on the data variance.
 
-    This function computes the variance of the dataset `X` and uses it to initialize the variance parameters according to the specified `covariance_type`.
-    The initialization can be done with or without reference to provided component means.
-    When `means` and `indices` are provided, the variance is computed per component; otherwise, a global variance is computed and repeated across components.
+    The variance of the dataset ``X`` is uses to initialize the variance parameters according to the specified ``covariance_type``.
 
     Parameters
     ----------
@@ -188,24 +184,27 @@ def data_variance(
         The dataset from which the variances are to be initialized.
     C : int
         The number of components.
-    covariance_type : str
-        The type of covariance structure. Must be one of `"isotropic"`, `"diagonaltied"`, `"mfatied"`, `"diagonal"`, or `"mfa"`.
-    means : npt.NDArray or None, optional
-        An array of shape `(C, D)` containing the means of the components. If `None`, the variance is computed without reference to component means. Default is `None`.
-    indices : npt.NDArray or None, optional
-        An array of shape `(N,)` containing the component assignments for each data point in `X`. This is required if `means` is provided. Default is `None`.
+    covariance_type : {"isotropic", "diagonal", "mfa", "full"}
+        The type of covariance structure.
+    shared: bool
+        If the variances are shared among components.
     verbose : bool, optional
-        If `True`, prints a message indicating that the variances are being initialized. Default is `False`.
+        If ``True``, prints a message indicating that the variances are being initialized. Default is ``False``.
 
     Returns
     -------
     param : npt.NDArray
-        The initialized variance parameters. The shape of the output array depends on the `covariance_type`:
-        - `"isotropic"`: `(1,)`
-        - `"diagonaltied"` `(D,)`
-        - `"mfatied"`: `(D,)`
-        - `"diagonal"`: `(C, D)`
-        - `"mfa"`: `(C, D)`
+        The initialized variance parameters.
+
+    Notes
+    -----
+
+    The shape of the output array depends on the ``covariance_type`` and ``shared``:
+
+    - ``"isotropic"``: ``(1,)`` if ``shared`` else ``(C,)``,
+    - ``"diagonal"``: ``(D,)`` if ``shared`` else ``(C, D)``,
+    - ``"mfa"``: ``(D,)`` if ``shared`` else ``(C, D)``,
+    - ``"full"``: ``(D, D)`` if ``shared`` else ``(C, D, D)``
     """
     N, D = X.shape
 
@@ -250,23 +249,31 @@ def random_variance(
         The dataset from which the variances are to be initialized.
     C : int
         The number of components.
-    covariance_type : str
-        The type of covariance structure. Must be one of `"isotropic"`, `"diagonaltied"`, `"mfatied"`, `"diagonal"`, `"mfa"` or `"full"`.
+    covariance_type : {"isotropic", "diagonal", "mfa", "full"}
+        The type of covariance structure.
+    shared: bool
+        If the variances are shared among components.
+    reg_covar : float, optional
+        Regularization strength for the covariance matrix. Defaults to ``1e-3``.
     rng : np.random.Generator, int, or None, optional
-        The random number generator or seed used to generate the uniform distribution. If `None`, the default random number generator is used.
+        The random number generator or seed used to generate the uniform distribution. If ``None``, the default random number generator is used.
     verbose : bool, optional
-        If `True`, prints a message indicating that the variances are being initialized. Default is `False`.
+        If ``True``, prints a message indicating that the variances are being initialized. Default is ``False``.
 
     Returns
     -------
     param : npt.NDArray
-        The initialized variance parameters. The shape of the output array depends on the `covariance_type`:
-        - `"isotropic"`: `(1,)`
-        - `"diagonaltied"` `(D,)`
-        - `"mfatied"`: `(D,)`
-        - `"diagonal"`: `(C, D)`
-        - `"mfa"`: `(C, D)`
-        - `"full"`: `(C, D, D)`
+        The initialized variance parameters.
+
+    Notes
+    -----
+
+    The shape of the output array depends on the ``covariance_type`` and ``shared``:
+
+    - ``"isotropic"``: ``(1,)`` if ``shared`` else ``(C,)``,
+    - ``"diagonal"``: ``(D,)`` if ``shared`` else ``(C, D)``,
+    - ``"mfa"``: ``(D,)`` if ``shared`` else ``(C, D)``,
+    - ``"full"``: ``(D, D)`` if ``shared`` else ``(C, D, D)``
     """
     rng = np.random.default_rng(rng)
     N, D = X.shape

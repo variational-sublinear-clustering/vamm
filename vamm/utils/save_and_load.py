@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import vamm
 
 
-def find_new_name(path: str | Path) -> Path:
+def _find_new_name(path: str | Path) -> Path:
     """
     Find a new name for a file to avoid overwriting an existing file.
 
@@ -40,8 +40,14 @@ def find_new_name(path: str | Path) -> Path:
             counter += 1
 
 
-_all_parameter_names = ["prior", "means", "variance", "A", "pies"]
-_all_attribute_names = ["covariance_type", "distance"]
+_all_parameter_names = [
+    "prior",
+    "means",
+    "variance",
+    "A",
+    "pies",
+]
+_all_attribute_names = ["covariance_type", "shared", "distance"]
 
 
 def save_params(
@@ -73,7 +79,7 @@ def save_params(
     """
     path = Path(path).with_suffix(".h5")
     path.parent.mkdir(parents=True, exist_ok=True)
-    file = path if overwrite else find_new_name(path)
+    file = path if overwrite else _find_new_name(path)
 
     # model parameters
     params = {}
@@ -90,15 +96,17 @@ def save_params(
 
     # adjust shape of variance for GMMs
     covariance_type = attributes.get("covariance_type", None)
-    if covariance_type in ("isotropic",):
+    shared = attributes.get("shared", None)
+    if covariance_type in ("isotropic",) and shared:
         params["variance"] = np.array([params["variance"][0, 0]])
-    if covariance_type in ("diagonaltied", "mfatied"):
+    if covariance_type in ("isotropic",) and not shared:
+        params["variance"] = params["variance"][:, 0]
+    if covariance_type in ("diagonal", "mfa") and shared:
         params["variance"] = params["variance"][0, :]
 
     # save as h5
     with h5py.File(file, "w") as f:
         for key, value in params.items():
-            # kwargs = {"compression": "gzip"} if type(value) == np.ndarray else {}
             f.create_dataset(key, data=value, compression="gzip")
         for key, value in attributes.items():
             f.attrs[key] = value
@@ -109,7 +117,6 @@ def save_params(
 
 def load_params(
     path: str | Path = "model.h5",
-    C: int | slice | list[int] = slice(None),
     verbose: bool = False,
     **kwargs,
 ):
@@ -132,21 +139,13 @@ def load_params(
     model
     """
     path = Path(path)
-
-    params = {}
     with h5py.File(path, "r") as f:
         # class name and other meta data
-        attributes = {}
-        for key in f.attrs.keys():
-            attributes[f"{key}"] = f.attrs[key]
+        attributes = {f"{key}": f.attrs[key] for key in f.attrs.keys()}
 
         # model parameters
         keys = (key for key in f.keys() if key in _all_parameter_names)
-        for key in keys:
-            if f[key].shape == (1,):
-                params[f"init_{key}"] = f[key]
-            else:
-                params[f"init_{key}"] = f[key][C]
+        params = {f"init_{key}": f[key][...] for key in keys}
 
     model_name = attributes.pop("model", "Gaussian")
     # use mfa as default model for now
@@ -154,17 +153,17 @@ def load_params(
         attributes["covariance_type"] = "mfa"
     Model = getattr(vamm, model_name)
 
-    if "init_pies" in params:
-        # fix name for prior (for older files)
-        params["init_prior"] = params.pop("init_pies")
-
     params["init_prior"] /= params["init_prior"].sum()  # fix prior
 
-    mask = params["init_prior"] != 0.0
-    if not mask.all():
-        for key, item in params.items():
-            if item.shape != (1,):
-                params[key] = item[mask]
+    if (params["init_prior"] == 0.0).any():
+        raise RuntimeError("init_prior == 0.0!")
+
+    # mask = params["init_prior"] != 0.0
+
+    # if not mask.all():
+    #     for key, item in params.items():
+    #         if item.shape != (1,):
+    #             params[key] = item[mask]
 
     C, D = params["init_means"].shape  # all models have means (so far)
     params |= {"C": C, "D": D}
@@ -183,9 +182,9 @@ def load_params(
             flush=True,
         )
 
-        if not mask.all():
-            print(
-                f"Found zero(s) in priors. Discarded {mask.shape[0] - C} component(s)!",
-                flush=True,
-            )
+        # if not mask.all():
+        #     print(
+        #         f"Found zero(s) in priors. Discarded {mask.shape[0] - C} component(s)!",
+        #         flush=True,
+        #     )
     return model

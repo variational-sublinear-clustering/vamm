@@ -10,10 +10,10 @@ These macros must be set at compile time.
 Example on how to set a macros in the `setup.py`:
 
 ```python
-define_macros = [("CLUSTERING_PRECISION", "double"), ...]
+define_macros = [("PRECISION_T", "double"), ...]
 ```
 
-### CLUSTERING_PRECISION
+### PRECISION_T
 
 - Possible values: `float`, `double`  
 - Default value: `double`

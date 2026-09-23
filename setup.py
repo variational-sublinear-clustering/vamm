@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 
@@ -66,7 +66,7 @@ extra_compile_args += [
 ]
 extra_compile_args += BUILD_TYPES.get(build_type, [])
 
-define_macros = [("CLUSTERING_PRECISION", "double"), ("EIGEN_DONT_PARALLELIZE", None)]
+define_macros = [("PRECISION_T", "double"), ("EIGEN_DONT_PARALLELIZE", None)]
 
 ext_modules = [
     Pybind11Extension(
@@ -103,4 +103,11 @@ with ParallelCompile(default=0):
         zip_safe=False,
         ext_modules=ext_modules,
         install_requires=requirements,
+        extras_require={
+            "test": [
+                "pytest",
+                "pytest-cpp",
+                "cmake",
+            ],
+        },
     )

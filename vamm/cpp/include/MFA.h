@@ -15,8 +15,6 @@
 
 class MFA : public Mixture<MFA> {
    public:
-    size_t C;
-    size_t D;
     size_t H;
 
     const precision_t reg_covar; /* regularization added to the diagonal variance */
@@ -24,7 +22,6 @@ class MFA : public Mixture<MFA> {
 
     /* Model parameters */
     Matrix<> A;
-    Matrix<> M;
     Matrix<> S_diag; /* Maybe use sparse matrix here */
 
     /* Utility */
@@ -40,25 +37,18 @@ class MFA : public Mixture<MFA> {
 
     MFA(size_t C_, size_t D_, size_t H_, bool flat_prior_, bool shared_, precision_t reg_covar_);
 
-    size_t get_C(void) const;
-
-    size_t get_D(void) const;
-
-    size_t get_H(void) const;
-
     Matrix<>& get_A();
-
-    Matrix<>& get_M();
 
     Matrix<>& get_S();
 
     void set_A(cRef<Matrix<>>);
 
-    void set_M(cRef<Matrix<>>);
-
     void set_S(cRef<Matrix<>>);
 
     void auxiliary_(const size_t c);
+
+    void relocate_discarded_components(std::vector<size_t>& from, std::vector<size_t>& to,
+                                       Random<std::mt19937_64>& rng);
 
     template <class Lmbd>
     void E_step_allocate(const Lmbd& lmbd) const;
@@ -69,14 +59,25 @@ class MFA : public Mixture<MFA> {
     template <class Lmbd>
     void M_step_allocate(const Lmbd& lmbd) const;
 
-    template <class Lmbd>
-    void M_step_update(size_t c, Lmbd&& data_loop, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>& T0,
-                       Vector<>& T1, ColMatrix<>& AM);
+    void M_step_reset(size_t c, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>&, Vector<>&, ColMatrix<>&);
+
+    void M_step_accumulate(cRef<Vector<>> x, precision_t q_nc, size_t c, ColMatrix<>& YE, ColMatrix<>& EE,
+                           Vector<>& T0, Vector<>& T1, ColMatrix<>& AM);
+
+    void M_step_update(size_t c, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>& T0, Vector<>& T1,
+                       ColMatrix<>& AM);
 
     void M_step_finalize(size_t N);
+
+    std::function<void(size_t N)> finalize_variance;
+    void finalize_shared_variance(size_t N);
+    void finalize_diagonal_variance(size_t N);
+
     Vector<> z_projection(cRef<Vector<>> x, size_t c) const;
 
     precision_t mahalanobis_distance(cRef<Vector<>> x, size_t c) const;
+
+    Matrix<> generate_data(size_t, int, bool, int);
 
 #ifdef CPPLIB_ENABLE_PYTHON_INTERFACE
 
@@ -90,13 +91,10 @@ class MFA : public Mixture<MFA> {
 MFA::MFA(size_t C_, size_t D_, size_t H_, bool flat_prior_ = false, bool shared_ = false,
          precision_t reg_covar_ = 1e-3) :
     Mixture(C_, D_, flat_prior_),
-    C(C_),
-    D(D_),
     H(H_),
     reg_covar(reg_covar_),
     pi_factor(D_ * std::log(2.0 * M_PI)),
-    A(Matrix<>::Zero(C_, D_ * H_)),
-    M(Matrix<>::Zero(C_, D_)),
+    A(Matrix<>::Ones(C_, D_ * H_)),
     S_diag(Matrix<>::Ones(C_, D_)),
     LM(C_, Matrix<>::Zero(H_, H_)),
     UV(C_, Matrix<>::Zero(D_, 2 * H_)),
@@ -107,29 +105,20 @@ MFA::MFA(size_t C_, size_t D_, size_t H_, bool flat_prior_ = false, bool shared_
     if ((H == 0) || (H > D)) {
         throw std::invalid_argument("( ( H == 0 ) || ( H > D ) )");
     }
-    P_adjust();
+    if (shared_) {
+        finalize_variance = [&](size_t N) { finalize_shared_variance(N); };
+    } else {
+        finalize_variance = [&](size_t N) { finalize_diagonal_variance(N); };
+    }
 }
 
-size_t MFA::get_C(void) const { return C; }
-
-size_t MFA::get_D(void) const { return D; }
-
-size_t MFA::get_H(void) const { return H; }
-
 Matrix<>& MFA::get_A() { return A; }
-
-Matrix<>& MFA::get_M() { return M; }
 
 Matrix<>& MFA::get_S() { return S_diag; }
 
 void MFA::set_A(cRef<Matrix<>> A_) {
     checkSize(A_, C, D * H);
     A = A_;
-}
-
-void MFA::set_M(cRef<Matrix<>> M_) {
-    checkSize(M_, C, D);
-    M = M_;
 }
 
 void MFA::set_S(cRef<Matrix<>> S_) {
@@ -164,6 +153,35 @@ void MFA::auxiliary_(const size_t c) {
     UV[c].rightCols(H).noalias() = UV[c].leftCols(H) * LM[c];  // LM symmetric matrix .transpose()
 }
 
+void MFA::relocate_discarded_components(std::vector<size_t>& from, std::vector<size_t>& to,
+                                        Random<std::mt19937_64>& rng) {
+    const size_t size = from.size();
+#pragma omp parallel
+    {
+        size_t c1;
+        size_t c2;
+        std::normal_distribution<precision_t> std_normal{0.0, 1.0};
+        ColVector<> noise(H);
+#pragma omp for
+        for (size_t i = 0; i < size; i++) {
+            c1 = from[i];
+            c2 = to[i];
+            noise = noise.unaryExpr([&](precision_t) { return std_normal(rng()); });
+            P[c1] = P[c2];
+            // we could maybe add diag noise, but the new components are discarded more frequently then
+            // (take care with storage order: z noise is colMajor, diag noise must be rowMajor)
+            M.row(c1) = M.row(c2);
+            M.row(c1).noalias() += A.row(c2).reshaped<Eigen::RowMajor>(D, H) * noise;
+            S_diag.row(c1) = S_diag.row(c2);
+            A.row(c1) = A.row(c2);
+
+            if (!checkFinite(M.row(c1))) {
+                discard(c1, "relocated mean not finite");
+            }
+        }
+    }
+}
+
 template <class Lmbd>
 void MFA::E_step_allocate(const Lmbd& lmbd) const {
     Vector<> T0(D);
@@ -195,33 +213,28 @@ void MFA::M_step_allocate(const Lmbd& lmbd) const {
     lmbd(YE, EE, T0, T1, AM);
 }
 
-template <class Lmbd>
-void MFA::M_step_update(size_t c, Lmbd&& data_loop, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>& T0,
-                        Vector<>& T1, ColMatrix<>& AM) {
-    EE.fill(0.);
+void MFA::M_step_reset(size_t c, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>&, Vector<>&, ColMatrix<>&) {
     YE.fill(0.);
+    EE.fill(0.);
     P[c] = 0.;
     S_diag.row(c).fill(0.);
-    size_t data_per_component = 0;
+}
 
-    data_loop([&](cRef<Vector<>> x, precision_t q_nc) {
-        T1[H] = 1.0;
-        T0 = x - M.row(c);
-        T1.head(H).noalias() = T0 * UV[c].rightCols(H);
+void MFA::M_step_accumulate(cRef<Vector<>> x, precision_t q_nc, size_t c, ColMatrix<>& YE, ColMatrix<>& EE,
+                            Vector<>& T0, Vector<>& T1, ColMatrix<>&) {
+    T1[H] = 1.0;
+    T0 = x - M.row(c);
+    T1.head(H).noalias() = T0 * UV[c].rightCols(H);
 
-        EE.noalias() += q_nc * T1.transpose() * T1;
+    EE.noalias() += q_nc * T1.transpose() * T1;
 
-        T1 *= q_nc;
-        YE.noalias() += x.transpose() * T1;
-        S_diag.row(c) += q_nc * x.array().square().matrix();
-        P[c] += q_nc;
-        data_per_component++;
-    });
+    T1 *= q_nc;
+    YE.noalias() += x.transpose() * T1;
+    S_diag.row(c) += q_nc * x.array().square().matrix();
+    P[c] += q_nc;
+}
 
-    if (!shared and (reg_covar == 0.0) and (data_per_component < H + 2)) {
-        discard(c, "Contains less than H+2 data points!");
-        return;
-    }
+void MFA::M_step_update(size_t c, ColMatrix<>& YE, ColMatrix<>& EE, Vector<>&, Vector<>&, ColMatrix<>& AM) {
     if (P[c] <= 0) {
         discard(c, "prior not positive");
         return;
@@ -245,31 +258,36 @@ void MFA::M_step_update(size_t c, Lmbd&& data_loop, ColMatrix<>& YE, ColMatrix<>
 }
 
 void MFA::M_step_finalize(size_t N) {
-    if (shared) {
-        T.fill(0.);
-        for (size_t c = 0; c < C; c++) {
-            if (Mask[c]) {
-                T += S_diag.row(c);
-            }
-        }
-        T /= N;
-        T.array() = T.array().max(reg_covar);
-#pragma omp parallel for
-        for (size_t c = 0; c < C; c++) {
-            if (Mask[c]) {
-                S_diag.row(c) = T;
-            }
-        }
-    } else {
-#pragma omp parallel for
-        for (size_t c = 0; c < C; c++) {
-            if (Mask[c]) {
-                S_diag.row(c) /= P[c];
-                S_diag.row(c) = S_diag.row(c).array().max(reg_covar);
-            }
+    /* */
+    finalize_variance(N);
+    P_adjust();
+}
+
+void MFA::finalize_shared_variance(size_t N) {
+    T.fill(0.);
+    for (size_t c = 0; c < C; c++) {
+        if (Mask[c]) {
+            T += S_diag.row(c);
         }
     }
-    P_adjust();
+    T /= N;
+    T.array() = T.array().max(reg_covar);
+#pragma omp parallel for
+    for (size_t c = 0; c < C; c++) {
+        if (Mask[c]) {
+            S_diag.row(c) = T;
+        }
+    }
+}
+
+void MFA::finalize_diagonal_variance(size_t) {
+#pragma omp parallel for
+    for (size_t c = 0; c < C; c++) {
+        if (Mask[c]) {
+            S_diag.row(c) /= P[c];
+            S_diag.row(c) = S_diag.row(c).array().max(reg_covar);
+        }
+    }
 }
 
 Vector<> MFA::z_projection(cRef<Vector<>> x, size_t c) const {
@@ -291,76 +309,67 @@ precision_t MFA::mahalanobis_distance(cRef<Vector<>> x, size_t c) const {
     return val;
 }
 
+Matrix<> MFA::generate_data(size_t N, int c = -1, bool add_noise = true, int seed = -1) {
+    if (N <= 0) throw std::invalid_argument("N must be > 0");
+
+    if (seed < 0) seed = std::random_device{}();
+    Random<std::mt19937> rng(seed);
+
+    Vector<size_t> hidden_states(N);
+
+    if (c < 0) {
+        std::discrete_distribution<size_t> categorical(P.begin(), P.end());
+        hidden_states = hidden_states.unaryExpr([&](precision_t) { return categorical(rng()); });
+    } else {
+        hidden_states.setConstant(c);
+    }
+
+    std::normal_distribution<precision_t> std_normal(0.0, 1.0);
+    Matrix<> z(Matrix<>::NullaryExpr(N, H, [&]() { return std_normal(rng()); }));
+
+    Matrix<> X(N, D);
+
+#pragma omp parallel for
+    for (size_t n = 0; n < N; ++n) {
+        X.row(n).noalias() =
+            (A.row(hidden_states[n]).reshaped<Eigen::RowMajor>(D, H) * z.row(n).transpose()).transpose();
+        X.row(n) += M.row(hidden_states[n]);
+    }
+
+    if (add_noise) {
+#pragma omp parallel
+        {
+            Vector<> noise_vec(D);
+            std::normal_distribution<precision_t> std_normal(0.0, 1.0);
+#pragma omp for
+            for (size_t n = 0; n < N; ++n) {
+                noise_vec = noise_vec.unaryExpr([&](precision_t) { return std_normal(rng()); });
+                X.row(n) += (S_diag.row(hidden_states[n]).array().sqrt() * noise_vec.array()).matrix();
+            }
+        }
+    }
+    return X;
+}
+
 #ifdef CPPLIB_ENABLE_PYTHON_INTERFACE
 
 void MFA::bind(py::module_& m) {
-    py::class_<MFA> MFA_class_(m, "MFA", py::module_local(), R"(
-    Mixture of Factor Analyzer.
-
-    Parameters
-    ----------
-    C : int
-        Number of components.
-    D : int
-        Dimensionality of the data.
-    H : int
-        Dimensionality of the factors.
-    flat_prior : bool, optional
-        Whether to use a flat prior for the mixture components. Defaults to False.
-    shared : bool, optional
-        Whether the diagonal variances are shared among components. Defaults to False.
-    reg_covar : float, optional
-        Regularization strength for the covariance matrix. Defaults to 1e-3.
-    )");
+    py::class_<MFA> MFA_class_(m, "MFA", py::module_local());
 
     MFA_class_.def(py::init<size_t, size_t, size_t, bool, bool, precision_t>(), "C"_a, "D"_a, "H"_a,
                    "flat_prior"_a = false, "shared"_a = false, "reg_covar"_a = 1e-3);
 
-    MFA_class_.def_property_readonly("C", &MFA::get_C, "The number of components.");
-    MFA_class_.def_property_readonly("D", &MFA::get_D, "The dimensionality of the data");
-    MFA_class_.def_property_readonly("H", &MFA::get_H, "The dimensionality of the factors.");
+    MFA_class_.def_readonly("H", &MFA::H);
 
-    MFA_class_.def_property("means", &MFA::get_M, &MFA::set_M, "The mean values of all mixture components.");
-    MFA_class_.def_property("variance", &MFA::get_S, &MFA::set_S,
-                            "The diagonal variances of all mixture components.");
-    MFA_class_.def_property("A", &MFA::get_A, &MFA::set_A,
-                            "The factor loading matrices of all mixture components.");
+    MFA_class_.def_property("variance", &MFA::get_S, &MFA::set_S);
+    MFA_class_.def_property("A", &MFA::get_A, &MFA::set_A);
 
-    MFA_class_.def_readwrite("shared", &MFA::shared,
-                             "Whether the diagonal variances are shared among components.");
+    MFA_class_.def_readwrite("shared", &MFA::shared);
 
-    MFA_class_.def("z_projection", &MFA::z_projection, "x"_a.noconvert(), "c"_a, R"(
-    z_projection(x: numpy.ndarray[numpy.float64[1, n]], c: int)
-    Projects the given data point into the latent space by calculating the most likely factor 'z' given component 'c'.
-
-    Parameters
-    ----------
-    x : npt.ndarray
-        Data point.
-    c : int
-        Component index.
-
-    Returns
-    -------
-    z : npt.ndarray
-        Factor represented as an H-dimensional vector.
-    )");
-
-    MFA_class_.def("mahalanobis_distance", &MFA::mahalanobis_distance, "x"_a.noconvert(), "c"_a, R"(
-    mahalanobis distance(x: numpy.ndarray[numpy.float64[1, n]], c: int)
-
-    Parameters
-    ----------
-    x : npt.ndarray
-        Data point.
-    c : int
-        Component index.
-
-    Returns
-    -------
-    val : float
-        mahalanobis distance
-    )");
+    MFA_class_.def("z_projection", &MFA::z_projection, "x"_a.noconvert(), "c"_a);
+    MFA_class_.def("mahalanobis_distance", &MFA::mahalanobis_distance, "x"_a.noconvert(), "c"_a);
+    MFA_class_.def("generate_data", &MFA::generate_data, "N"_a, "c"_a = -1, "add_noise"_a = true,
+                   "seed"_a = -1);
 
     bind_base<precision_t>(MFA_class_);
 }

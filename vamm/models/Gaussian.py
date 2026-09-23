@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 
@@ -8,6 +8,7 @@ import numpy as np
 import numpy.typing as npt
 
 from vamm.models.Models import Models
+from ..em.Variational import Variational
 from vamm.cpp import MFA, Diagonal, Full
 from vamm.utils.init_params import uniform, data_variance, random_variance
 
@@ -20,32 +21,88 @@ class Gaussian(Models):
     ----------
     C : int
         Number of components.
+
     D : int
         Dimensionality of the data.
-    H : int
-        Dimensionality of the factors. (Only used for "mfa".)
+
     covariance_type : {"isotropic", "diagonal", "mfa", "full"}
         Type of covariance matrix.
+
     shared : bool, optional
         Whether the covariance matrix is shared among the Gaussian components. Defaults to False.
+
+    H : int
+        Dimensionality of the factors. (Only used for "mfa".)
+
     flat_prior : bool, optional
         Whether to use a flat prior for the mixture components. Defaults to False.
+
     init_prior : np.ndarray or "flat", optional
-        Initial values for the priors of the mixture components. Defaults to "flat", which initializes flat priors `1/C`.
+        Initial values for the priors of the mixture components. Defaults to "flat", which initializes flat priors ``1/C``.
+
     init_means : np.ndarray or {"afkmc2", "random"}, optional
-        Initial values for the means of the mixture components. "afkmc2": AF-KMC² initialization.
+        Initial values for the means of the mixture components. "afkmc2": AFK-MC² initialization.
         "random": randomly selected data point. Defaults to "afkmc2".
+
     init_A : np.ndarray or "uniform", optional
         Initial values for the factor loading matrices. Defaults to "uniform", which fills the factor loadings with uniform random numbers in [0, 1].
         (Only used for "mfa".)
+
     init_variance : np.ndarray or "data_variance", optional
         Initial values for the diagonal variance. Defaults to "data_variance", which uses the variance of the data.
+
     reg_covar : float, optional
         Regularization strength for the covariance matrix. Defaults to 1e-3.
 
     Attributes
     ----------
-    TODO
+    C : int
+        Number of mixture components (read-only).
+
+    D : int
+        Dimensionality of the input data (read-only).
+
+    H : int
+        Dimensionality of the latent factor space (read-only). (Only used for "mfa".)
+
+    prior : ndarray of shape (C,)
+        Prior probabilities of the mixture components. The values sum to one
+        over all active components.
+
+    log_prior : ndarray of shape (C,)
+        The natural logarithm of the prior (read-only).
+
+    means : ndarray of shape (C, D)
+        Mean vectors of the mixture components.
+
+    variance : ndarray of shape (C, D)
+        Diagonal variance vectors of the mixture components.
+
+    A : ndarray of shape (C, D, H)
+        Factor loading matrices. Each row contains the loading
+        matrix of one mixture component. (Only used for "mfa".)
+
+    mask : ndarray of shape (C,), dtype=bool
+        Boolean mask indicating which mixture components are active. Components
+        marked as ``False`` are ignored during inference and training.
+
+    active : int
+        Number of active mixture components (read-only).
+
+    flat_prior : bool
+        Whether all active mixture components share the same prior probability.
+
+    dtype : numpy.dtype
+        Floating-point data type used to store the model parameters (read-only).
+
+    verbose_discard : bool
+        Whether to print a message when a component gets discarded. Defaults to False.
+
+    reg_covar : float
+        The regularization strength of the covariance matrix (read-only).
+
+    em : Variational
+        The last used EM trainer.
     """
 
     def __init__(
@@ -96,10 +153,7 @@ class Gaussian(Models):
                 flat_prior,
             )
 
-        self._init |= {"variance": init_variance} if type(init_variance) is str else {}
-        self._init |= (
-            {"A": init_A} if type(init_A) is str and covariance_type in ("mfa",) else {}
-        )
+        self._init |= {"variance": None, "A": None}
 
         if type(init_A) is np.ndarray and covariance_type in ("mfa",):
             assert init_A.shape == (
@@ -108,11 +162,17 @@ class Gaussian(Models):
                 H,
             ), f"Shape of Factors should be ({C,D,H},), but got {init_A.shape}"
             self.A = init_A
+        elif type(init_A) is str and covariance_type in ("mfa",):
+            self._cpp.A[:] = np.nan
+            self._init["A"] = init_A
 
         if type(init_variance) is np.ndarray:
             self._check_variance(
                 init_variance, covariance_type, shared, C, D, reg_covar
             )
+        elif type(init_variance) is str:
+            self._cpp.variance[:] = np.nan
+            self._init["variance"] = init_variance
 
     def _check_variance(self, init_variance, covariance_type, shared, C, D, reg_covar):
         if covariance_type == "isotropic" and shared:
@@ -172,8 +232,7 @@ class Gaussian(Models):
                 np.maximum(init_variance, reg_covar, out=init_variance)
             self.variance = init_variance
 
-    # TODO: make 'private'?
-    def initialize(
+    def _initialize(
         self,
         X: npt.NDArray,
         indices: npt.NDArray | None = None,
@@ -181,11 +240,11 @@ class Gaussian(Models):
         verbose: bool = False,
     ):
         rng = np.random.default_rng(rng)
-        indices = Models.initialize(
+        indices = Models._initialize(
             self, X=X, indices=indices, rng=rng, verbose=verbose
         )
 
-        if "variance" in self._init:
+        if np.isnan(self.variance).all() and self._init["variance"] is not None:
             init_method_variance = self._init["variance"]
             assert init_method_variance in (
                 "data_variance",
@@ -213,14 +272,16 @@ class Gaussian(Models):
                 self.D,
                 self._reg_covar,
             )
-            self._init.pop("variance")
 
-        if "A" in self._init:
+        if (
+            self.covariance_type == "mfa"
+            and np.isnan(self.A).all()
+            and self._init["A"] is not None
+        ):
             assert self._init["A"] in (
                 "uniform",
             ), "Initialization method for A unknown."
             self.A = uniform(self.C, self.D, self.H, rng=rng, verbose=verbose)
-            self._init.pop("A")
 
         return indices
 
@@ -315,16 +376,15 @@ class Gaussian(Models):
             raise AttributeError(f"'{self._cpp}' has no attribute 'A'")
         self._cpp.A = _A.reshape(self.C, self.D * self.H)
 
-    @property
     def covariances(self) -> np.ndarray:
         """
         Compute the covariance matrices of the model.
 
         This method returns the covariance matrices based on the covariance type specified in the model.
 
-        - For `"full"` the covariance matrices are directly returned.
+        - For ``"full"`` the covariance matrices are directly returned.
 
-        - For `"mfa"`, the covariance matrix for each component is computed as:
+        - For ``"mfa"``, the covariance matrix for each component is computed as:
 
             .. math::
                 \\Sigma_c = A_c A_c^T + D_c
@@ -334,12 +394,12 @@ class Gaussian(Models):
         Returns
         -------
         np.ndarray
-            An array of shape `(C, D, D)` representing the covariance matrices of the model.
+            An array of shape ``(C, D, D)`` representing the covariance matrices of the model.
 
         Notes
         -----
-        - This method is intended for convenience and should only be used when the number of components `C` and the data dimensionality `D` are small to medium-sized.
-        - Computing and storing full covariance matrices can be computationally expensive for large `C` and `D`. In this case it is recommended to directly work with `variance` and/or `A`.
+        - This method is intended for convenience and should only be used when the number of components ``C`` and the data dimensionality ``D`` are small to medium-sized.
+        - Computing and storing full covariance matrices can be computationally expensive for large ``C`` and ``D``. In this case it is recommended to directly work with ``variance`` and/or ``A``.
         """
         if self.covariance_type in ("full",):
             return self.variance
@@ -390,16 +450,86 @@ class Gaussian(Models):
         else:
             self._cpp.variance = _variance
 
-    # TODO: make 'private'?
-    def pretrainer(
+    def z_projection(self, x: np.ndarray, c: int):
+        """
+        Projects the given data point into the latent space by calculating the most likely factor 'z' given component 'c'. (Only used for "mfa".)
+
+        Parameters
+        ----------
+        x : npt.ndarray
+            Data point.
+        c : int
+            Component index.
+
+        Returns
+        -------
+        z : npt.ndarray
+            Factor represented as an H-dimensional vector.
+        """
+        if not isinstance(self._cpp, MFA):
+            raise AttributeError(f"'{self._cpp}' has no function 'z_projection'")
+        return self._cpp.z_projection(x, c)
+
+    def mahalanobis_distance(self, x: np.ndarray, c: int):
+        """
+        Computes the Mahalanobis distance for data point x and component c.
+        (Only used for "mfa".)
+
+        Parameters
+        ----------
+        x : npt.ndarray
+            Data point.
+        c : int
+            Component index.
+
+        Returns
+        -------
+        val : float
+            mahalanobis distance
+        """
+        if not isinstance(self._cpp, MFA):
+            raise AttributeError(
+                f"'{self._cpp}' has no function 'mahalanobis_distance'"
+            )
+        return self._cpp.mahalanobis_distance(x, c)
+
+    def generate_data(
+        self, N: int, c: int = None, add_noise: bool = True, seed: int = None
+    ):
+        """
+        Generate synthetic data based on the model parameters.
+
+        Parameters
+        ----------
+        N : int
+            Number of data points to generate.
+        c : int, optional
+            If given, only data from this component are generated
+        add_noise : bool, optional
+            Whether to add noise to the generated data. Defaults to True.
+        seed : int, optional
+            Seed for random number generation. If None, the global generator is used.
+
+        Returns
+        -------
+        X : np.ndarray
+            Synthetic data generated by the model.
+        """
+        c = -1 if c is None else c
+        seed = -1 if seed is None else seed
+        return self._cpp.generate_data(N, c, add_noise, seed)
+
+    def _pretrainer(
         self,
         X: np.ndarray,
+        em: Variational = None,
         limit: list[int] | int | None = 1000,
         rng: np.random.generator | int | None = None,
         eps: list[float] | float = 1.0e-4,
         C_prime: int = 3,
         G: int = 15,
         E: int = 1,
+        relocate_discarded: bool = True,
         indices: npt.NDArray | None = None,
         verbose: bool = True,
     ) -> tuple[float, int]:
@@ -438,6 +568,7 @@ class Gaussian(Models):
         """
         if verbose:
             print("Pretrain means ... ", flush=True)
+
         pretrainer = Gaussian(
             C=self.C,
             D=self.D,
@@ -447,35 +578,23 @@ class Gaussian(Models):
             init_means=self.means,
             init_variance=np.ones(1),
         )
-        if "means" in self._init:
-            pretrainer._init["means"] = self._init.pop("means")
-        if "prior" in self._init:
-            pretrainer._init["prior"] = self._init.pop("prior")
-
-        eps, limit = self._check_conv_criteria(eps, limit)
-
         pretrainer.fit(
             X=X,
+            em=em,
             limit=limit,
             rng=rng,
             eps=eps,
             C_prime=C_prime,
             G=G,
             E=E,
+            relocate_discarded=relocate_discarded,
             indices=indices,
             verbose=verbose,
         )
         self.em = pretrainer.em
-        self.mask = pretrainer.mask
-        self._log = pretrainer._log
+        self.em._log = pretrainer.em._log
 
+        self.mask = pretrainer.mask
         self.prior = pretrainer.prior
         self.means = pretrainer.means
         self.variance[:] = pretrainer.variance[0, 0]
-
-        if "variance" in self._init:
-            self._init.pop("variance")
-
-        # if hasattr(self, "A"):
-        #     self.A *= pretrainer.variance[0, 0]
-        return [0, eps[-1]], [0, limit[-1]]

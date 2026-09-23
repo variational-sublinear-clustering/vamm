@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg 
+# Copyright (C) 2025 Machine Learning Lab of the University of Oldenburg
 # and Artificial Intelligence Lab of the University of Innsbruck.
 # Licensed under the Academic Free License version 3.0
 from __future__ import annotations
@@ -14,21 +14,21 @@ def check_X(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray:
     """
-    Validates and adjusts the input array `X` to ensure it has the correct shape and memory layout for use in C++ code without requiring a copy.
-    When `check_C` is `True`, this function enforces a minimum number of data points to match the number of components.
+    Validates and adjusts the input array ``X`` to ensure it has the correct shape and memory layout for use in C++ code without requiring a copy.
+    When ``check_C`` is ``True``, this function enforces a minimum number of data points to match the number of components.
 
     Parameters
     ----------
     C : int
-        The expected number of components. Used to validate that the number of data points is sufficient when `check_C` is `True`.
+        The expected number of components. Used to validate that the number of data points is sufficient when ``check_C`` is ``True``.
     D : int
         The expected number of features (dimensionality) for each data point.
     X : npt.NDArray
-        The input data array of shape `(N, D)`
+        The input data array of shape ``(N, D)``
     check_C : bool, optional
-        If `True`, checks that the number of samples `N` is at least `C`. Default is `False`.
+        If ``True``, checks that the number of samples ``N`` is at least ``C``. Default is ``False``.
     dtype: npt.DTypeLike or None, optional
-        Enforce dtype of `X`. Defaults to None, which keeps the original dtype.
+        Enforce dtype of ``X``. Defaults to None, which keeps the original dtype.
 
     Returns
     -------

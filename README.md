@@ -1,7 +1,7 @@
 # VAMM
 
 **Variational Accelerated Mixture Models (VAMM)** is a Python/C++ package for truncated variational optimization of mixture models, suitable for high-dimensional, large-scale datasets and large models.
-Refer to the [related publications](#related-publications) for more details. To get started, check out the provided [example](#run-the-demo).
+Refer to the [related publications](#related-publications) for more details. To get started, check out the documentation (**TODO**) and explore the provided [example](#run-the-demo).
 
 ## Installation
 
@@ -30,8 +30,7 @@ Please note that the code has only been tested on Linux distributions.
     If you have cloned the repository without the `--recursive` flag, run the following commands inside the repository to initialize and update the submodules:
 
     ```bash
-    git submodule init
-    git submodule update
+    git submodule update --init
     ```
 
     This will download the required C++ libraries, [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page) and a subset of [Boost](https://www.boost.org/).
@@ -64,7 +63,38 @@ Rebuild the package using `pip install .` for the changes to take effect.
 ## Run the Demo
 
 After [installation](#installation), you will be able to run **VAMM**. Therefore, check out our [examples](./examples/README.md).
-The demo fits different types of Gaussian mixture models (including mixtures of factor analyzers) to a [dataset of hand-written digits](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html). Final training objectives for each optimization run are reported.
+The demo fits various mixture models to a [dataset of digits](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html) and reports the final training objectives.
+
+## Run Tests
+
+The integration and unit tests require additional dependencies, which can be installed with:
+
+```bash
+pip install .[test]
+```
+
+Once the dependencies are installed, run the test suite with:
+
+```bash
+pytest
+```
+
+## Types of Gaussian Mixtures
+
+The `Gaussian` class implements Gaussian mixture models (GMMs) with various types of covariance structures. Currently, it supports isotropic, diagonal and full variances, as well as mixtures of factor analyzers (MFAs). The variances can optionally be shared among all components.
+The type is specified via the `covariance_type` argument, while the `shared` boolean controls whether variances are shared. (For MFAs, only the diagonal variance is shared, but each component has its own factor loadings.)
+The table below provides an overview of the supported types. The **sklearn** column shows the corresponding `covariance_type` used in scikit-learn's [GaussianMixture](https://scikit-learn.org/stable/modules/generated/sklearn.mixture.GaussianMixture.html) class.
+
+| `covariance_type` | `shared` | variance                                                             | description                                                                  | [sklearn](https://scikit-learn.org/stable/modules/generated/sklearn.mixture.GaussianMixture.html)     |
+|:-----------------:|:--------:|:--------------------------------------------------------------------:|------------------------------------------------------------------------------|:-----------:|
+| `isotropic`       | :heavy_check_mark:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\sigma$" title="shared scalar variance" />                                                             | all components share the same scalar variance                                | -           |
+| `isotropic`       | :x:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\sigma_c$" title="scalar variance" />                                                           | each component has its own scalar variance                                   | `spherical` |
+| `diagonal`        | :heavy_check_mark:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\boldsymbol{D}$" title="shared diagonal variance" />                                                     | all components share the same diagonal covariance matrix                     | -           |
+| `diagonal`        | :x:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\boldsymbol{D}_c$" title="diagonal variance" />                                                   | each component has its own diagonal covariance matrix                        | `diag`      |
+| `mfa`             | :heavy_check_mark:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\boldsymbol{\Lambda}_c\boldsymbol{\Lambda}_c^T&plus;\boldsymbol{D}$" title="mixture of factor analyser (shared diagonal)" />   | each component has a low-rank + diagonal covariance matrix (shared diagonal) | -           |
+| `mfa`             | :x:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\boldsymbol{\Lambda}_c\boldsymbol{\Lambda}_c^T&plus;\boldsymbol{D}_c$" title="mixture of factor analyser" /> | each component has its own low-rank + diagonal covariance matrix             | -           |
+| `full`            | :heavy_check_mark:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\boldsymbol{\Sigma}$" title="shared full covariance" />                                                | all components share the same general covariance matrix                      | `tied`      |
+| `full`            | :x:       | <img src="https://latex.codecogs.com/png.image?\dpi{110}\color{RoyalBlue}$\boldsymbol{\Sigma}_c$" title="full covariance" />                                              | each component has its own general covariance matrix                         | `full`      |
 
 ## Related Publications
 
