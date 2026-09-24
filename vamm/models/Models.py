@@ -178,6 +178,11 @@ class Models:
             a DataFrame with training history.
         """
         self.em = em
+        X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
+        indices = self._initialize(X=X, indices=indices, rng=rng, verbose=verbose)
+        if indices is not None:
+            assert np.unique(indices).shape[0] == self.C, "indices are not unique!"
+
         if use_pretrainer:
             self._pretrainer(
                 X=X,
@@ -194,11 +199,6 @@ class Models:
             )
             limit = limit if isinstance(limit, (list, tuple)) else [limit]
             limit = [0, limit[-1]]  # avoid warmup after pretrainer
-
-        X = check_X(self.C, self.D, X, check_C=True, dtype=self.dtype)
-        indices = self._initialize(X=X, indices=indices, rng=rng, verbose=verbose)
-        if indices is not None:
-            assert np.unique(indices).shape[0] == self.C, "indices are not unique!"
 
         if self.em is None:
             self.em = Variational(
